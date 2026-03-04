@@ -187,9 +187,9 @@ export async function sendCompressNotification(
         message += `\n→ Topic: ${topic}`
         message += `\n→ Items: ${newlyCompressedMessageIds.length} messages`
         if (newlyCompressedToolIds.length > 0) {
-            message += ` and ${newlyCompressedToolIds.length} tools condensed`
+            message += ` and ${newlyCompressedToolIds.length} tools compressed`
         } else {
-            message += ` condensed`
+            message += ` compressed`
         }
         if (config.compress.showCompression) {
             message += `\n→ Compression (~${summaryTokensStr}): ${summary}`
