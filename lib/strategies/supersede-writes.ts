@@ -1,7 +1,7 @@
 import { PluginConfig } from "../config"
 import { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
-import { getFilePathsFromParameters, isProtected } from "../protected-file-patterns"
+import { getFilePathsFromParameters, isProtected } from "../protected-patterns"
 import { getTotalToolTokens } from "./utils"
 
 /**

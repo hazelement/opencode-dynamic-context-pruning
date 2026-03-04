@@ -48,7 +48,7 @@
                         "type": "string"
                     },
                     "default": [],
-                    "description": "Additional tool names to protect from pruning via commands (e.g., /dcp sweep)"
+                    "description": "Additional tool names or wildcard patterns to protect from pruning via commands (e.g., /dcp sweep). Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                 }
             },
             "default": {
@@ -219,7 +219,7 @@
                         "type": "string"
                     },
                     "default": [],
-                    "description": "Tool names whose completed outputs should be appended to the compression summary"
+                    "description": "Tool names or wildcard patterns whose completed outputs should be appended to the compression summary. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                 }
             }
         },
@@ -244,7 +244,7 @@
                                 "type": "string"
                             },
                             "default": [],
-                            "description": "Tool names excluded from deduplication"
+                            "description": "Tool names or wildcard patterns excluded from deduplication. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                         }
                     }
                 },
@@ -281,7 +281,7 @@
                                 "type": "string"
                             },
                             "default": [],
-                            "description": "Tool names excluded from error purging"
+                            "description": "Tool names or wildcard patterns excluded from error purging. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                         }
                     }
                 }

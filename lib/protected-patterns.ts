@@ -111,3 +111,34 @@ export function isProtected(filePaths: string[], patterns: string[]): boolean {
 
     return filePaths.some((path) => patterns.some((pattern) => matchesGlob(path, pattern)))
 }
+
+const GLOB_CHARS = /[*?]/
+
+/**
+ * Check if a tool name matches any of the given protected tool patterns.
+ * Supports both exact names (e.g. "task") and glob/wildcard patterns
+ * (e.g. "mcp_*", "mcp_server_*_fetch", "my_tool_?").
+ *
+ * For performance, exact patterns are checked via Set lookup first;
+ * only patterns containing wildcard characters (`*` or `?`) use glob matching.
+ */
+export function isToolNameProtected(toolName: string, patterns: string[]): boolean {
+    if (!toolName || !patterns || patterns.length === 0) return false
+
+    const exactPatterns: Set<string> = new Set()
+    const globPatterns: string[] = []
+
+    for (const pattern of patterns) {
+        if (GLOB_CHARS.test(pattern)) {
+            globPatterns.push(pattern)
+        } else {
+            exactPatterns.add(pattern)
+        }
+    }
+
+    if (exactPatterns.has(toolName)) {
+        return true
+    }
+
+    return globPatterns.some((pattern) => matchesGlob(toolName, pattern))
+}
