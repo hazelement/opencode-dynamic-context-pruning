@@ -105,17 +105,4 @@ Do not invent IDs. Use only IDs that are present in context.
 
 PARALLEL COMPRESS EXECUTION
 When multiple independent ranges are ready and their boundaries do not overlap, launch MULTIPLE \`compress\` calls in parallel in a single response. This is the PREFERRED pattern over a single large-range compression when the work can be safely split. Run compression sequentially only when ranges overlap or when a later range depends on the result of an earlier compression.
-
-THE FORMAT OF COMPRESS
-
-\`\`\`
-{
-  topic: string,           // Short label (3-5 words) - e.g., "Auth System Exploration"
-  content: {
-    startId: string,       // Boundary ID at range start: mNNNN or bN
-    endId: string,         // Boundary ID at range end: mNNNN or bN
-    summary: string        // Complete technical summary replacing all content in range
-  }
-}
-\`\`\`
 `

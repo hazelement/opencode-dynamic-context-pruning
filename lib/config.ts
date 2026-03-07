@@ -21,6 +21,7 @@ export interface CompressTool {
     nudgeFrequency: number
     iterationNudgeThreshold: number
     nudgeForce: "strong" | "soft"
+    flatSchema: boolean
     protectedTools: string[]
 }
 
@@ -117,6 +118,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.nudgeFrequency",
     "compress.iterationNudgeThreshold",
     "compress.nudgeForce",
+    "compress.flatSchema",
     "compress.protectedTools",
     "strategies",
     "strategies.deduplication",
@@ -383,6 +385,14 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
                 })
             }
 
+            if (compress.flatSchema !== undefined && typeof compress.flatSchema !== "boolean") {
+                errors.push({
+                    key: "compress.flatSchema",
+                    expected: "boolean",
+                    actual: typeof compress.flatSchema,
+                })
+            }
+
             if (compress.protectedTools !== undefined && !Array.isArray(compress.protectedTools)) {
                 errors.push({
                     key: "compress.protectedTools",
@@ -644,6 +654,7 @@ const defaultConfig: PluginConfig = {
         nudgeFrequency: 5,
         iterationNudgeThreshold: 15,
         nudgeForce: "soft",
+        flatSchema: false,
         protectedTools: [...COMPRESS_DEFAULT_PROTECTED_TOOLS],
     },
     strategies: {
@@ -812,6 +823,7 @@ function mergeCompress(
         nudgeFrequency: override.nudgeFrequency ?? base.nudgeFrequency,
         iterationNudgeThreshold: override.iterationNudgeThreshold ?? base.iterationNudgeThreshold,
         nudgeForce: override.nudgeForce ?? base.nudgeForce,
+        flatSchema: override.flatSchema ?? base.flatSchema,
         protectedTools: [...new Set([...base.protectedTools, ...(override.protectedTools ?? [])])],
     }
 }

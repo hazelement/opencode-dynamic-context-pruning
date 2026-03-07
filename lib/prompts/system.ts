@@ -18,7 +18,7 @@ CADENCE, SIGNALS, AND LATENCY
 - When multiple independent stale ranges are ready, batch compressions in parallel
 
 BOUNDARY MATCHING
-\`compress\` uses inclusive ID boundaries via \`content.startId\` and \`content.endId\`. IDs are injected in context as message refs (\`mNNNN\`) and compressed block refs (\`bN\`).
+\`compress\` uses inclusive ID boundaries via \`startId\` and \`endId\`. IDs are injected in context as message refs (\`mNNNN\`) and compressed block refs (\`bN\`).
 
 Each message has an ID inside XML metadata tags like \`<dcp-message-id>...</dcp-message-id>\`.
 Treat these tags as boundary metadata only, not as tool result content.
@@ -26,9 +26,9 @@ Treat these tags as boundary metadata only, not as tool result content.
 Only choose IDs currently visible in context. Do not invent IDs.
 
 RESPECT THE CHRONOLOGY OF THE RANGE
-\`content.startId\` MUST refer to an item above/before \`content.endId\`
-\`content.endId\` MUST refer to an item below/after \`content.startId\`
-Always provide boundaries via the tool schema fields \`content.startId\` and \`content.endId\`.
+\`startId\` MUST refer to an item above/before \`endId\`
+\`endId\` MUST refer to an item below/after \`startId\`
+Always provide boundaries via the tool schema fields \`startId\` and \`endId\`.
 
 THE SUMMARY STANDARD
 Your summary MUST be technical and specific enough to preserve FULL understanding of what transpired, such that NO ambiguity remains about what asked, found, planned, done, or decided - yet noise free

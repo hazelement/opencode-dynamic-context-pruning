@@ -17,3 +17,29 @@ It is the only user message intentionally not assigned a message ID, and therefo
 All subsequent messages in the session will have IDs.
 </instruction>
 `
+
+export const NESTED_FORMAT_OVERLAY = `
+THE FORMAT OF COMPRESS
+
+\`\`\`
+{
+  topic: string,           // Short label (3-5 words) - e.g., "Auth System Exploration"
+  content: {
+    startId: string,       // Boundary ID at range start: mNNNN or bN
+    endId: string,         // Boundary ID at range end: mNNNN or bN
+    summary: string        // Complete technical summary replacing all content in range
+  }
+}
+\`\`\``
+
+export const FLAT_FORMAT_OVERLAY = `
+THE FORMAT OF COMPRESS
+
+\`\`\`
+{
+  topic: string,           // Short label (3-5 words) - e.g., "Auth System Exploration"
+  startId: string,         // Boundary ID at range start: mNNNN or bN
+  endId: string,           // Boundary ID at range end: mNNNN or bN
+  summary: string          // Complete technical summary replacing all content in range
+}
+\`\`\``

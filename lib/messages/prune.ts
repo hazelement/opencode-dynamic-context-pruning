@@ -107,14 +107,6 @@ const pruneToolInputs = (state: SessionState, logger: Logger, messages: WithPart
                 continue
             }
 
-            // if (part.tool === "compress" && part.state.status === "completed") {
-            //     const content = part.state.input?.content
-            //     if (content && typeof content === "object" && "summary" in content) {
-            //         content.summary = PRUNED_COMPRESS_SUMMARY_REPLACEMENT
-            //     }
-            //     continue
-            // }
-
             if (!state.prune.tools.has(part.callID)) {
                 continue
             }

@@ -24,6 +24,28 @@ export interface CompressToolArgs {
     }
 }
 
+export interface FlatCompressToolArgs {
+    topic: string
+    startId: string
+    endId: string
+    summary: string
+}
+
+export function normalizeCompressArgs(args: Record<string, unknown>): CompressToolArgs {
+    if ("content" in args && typeof args.content === "object" && args.content !== null) {
+        return args as unknown as CompressToolArgs
+    }
+
+    return {
+        topic: args.topic as string,
+        content: {
+            startId: args.startId as string,
+            endId: args.endId as string,
+            summary: args.summary as string,
+        },
+    }
+}
+
 export interface BoundaryReference {
     kind: "message" | "compressed-block"
     rawIndex: number

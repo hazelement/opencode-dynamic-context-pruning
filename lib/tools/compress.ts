@@ -15,6 +15,7 @@ import {
     resolveAnchorMessageId,
     resolveBoundaryIds,
     resolveRange,
+    normalizeCompressArgs,
     validateCompressArgs,
     validateSummaryPlaceholders,
     type CompressToolArgs,
@@ -24,33 +25,57 @@ import { getCurrentParams, getCurrentTokenUsage, countTokens } from "../strategi
 import { deduplicate, supersedeWrites, purgeErrors } from "../strategies"
 import { saveSessionState } from "../state/persistence"
 import { sendCompressNotification } from "../ui/notification"
+import { NESTED_FORMAT_OVERLAY, FLAT_FORMAT_OVERLAY } from "../prompts/internal-overlays"
+
+function buildNestedSchema() {
+    return {
+        topic: tool.schema
+            .string()
+            .describe("Short label (3-5 words) for display - e.g., 'Auth System Exploration'"),
+        content: tool.schema
+            .object({
+                startId: tool.schema
+                    .string()
+                    .describe(
+                        "Message or block ID marking the beginning of range (e.g. m0001, b2)",
+                    ),
+                endId: tool.schema
+                    .string()
+                    .describe("Message or block ID marking the end of range (e.g. m0012, b5)"),
+                summary: tool.schema
+                    .string()
+                    .describe("Complete technical summary replacing all content in range"),
+            })
+            .describe("Compression details: ID boundaries and replacement summary"),
+    }
+}
+
+function buildFlatSchema() {
+    return {
+        topic: tool.schema
+            .string()
+            .describe("Short label (3-5 words) for display - e.g., 'Auth System Exploration'"),
+        startId: tool.schema
+            .string()
+            .describe("Message or block ID marking the beginning of range (e.g. m0001, b2)"),
+        endId: tool.schema
+            .string()
+            .describe("Message or block ID marking the end of range (e.g. m0012, b5)"),
+        summary: tool.schema
+            .string()
+            .describe("Complete technical summary replacing all content in range"),
+    }
+}
 
 export function createCompressTool(ctx: ToolContext): ReturnType<typeof tool> {
     ctx.prompts.reload()
     const runtimePrompts = ctx.prompts.getRuntimePrompts()
+    const useFlatSchema = ctx.config.compress.flatSchema
 
     return tool({
-        description: runtimePrompts.compress,
-        args: {
-            topic: tool.schema
-                .string()
-                .describe("Short label (3-5 words) for display - e.g., 'Auth System Exploration'"),
-            content: tool.schema
-                .object({
-                    startId: tool.schema
-                        .string()
-                        .describe(
-                            "Message or block ID marking the beginning of range (e.g. m0001, b2)",
-                        ),
-                    endId: tool.schema
-                        .string()
-                        .describe("Message or block ID marking the end of range (e.g. m0012, b5)"),
-                    summary: tool.schema
-                        .string()
-                        .describe("Complete technical summary replacing all content in range"),
-                })
-                .describe("Compression details: ID boundaries and replacement summary"),
-        },
+        description:
+            runtimePrompts.compress + (useFlatSchema ? FLAT_FORMAT_OVERLAY : NESTED_FORMAT_OVERLAY),
+        args: useFlatSchema ? buildFlatSchema() : buildNestedSchema(),
         async execute(args, toolCtx) {
             if (ctx.state.manualMode && ctx.state.manualMode !== "compress-pending") {
                 throw new Error(
@@ -65,7 +90,7 @@ export function createCompressTool(ctx: ToolContext): ReturnType<typeof tool> {
                 metadata: {},
             })
 
-            const compressArgs = args as CompressToolArgs
+            const compressArgs = normalizeCompressArgs(args as Record<string, unknown>)
             validateCompressArgs(compressArgs)
 
             toolCtx.metadata({
