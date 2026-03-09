@@ -14,8 +14,11 @@
  *
  * HOW WE CALCULATE EACH CATEGORY:
  *
- *   SYSTEM = firstAssistant.input + cache.read - tokenizer(firstUserMessage)
- *            The first response's input contains system + first user message.
+ *   SYSTEM = firstAssistant.input + cache.read + cache.write - tokenizer(firstUserMessage)
+ *            The first response's total input (input + cache.read + cache.write)
+ *            contains system + first user message. On the first request of a
+ *            session, the system prompt appears in cache.write (cache creation),
+ *            not cache.read.
  *
  *   TOOLS  = tokenizer(toolInputs + toolOutputs) - prunedTokens
  *            We must tokenize tools anyway for pruning decisions.
@@ -60,6 +63,7 @@ interface TokenBreakdown {
     assistant: number
     tools: number
     toolCount: number
+    toolsInContextCount: number
     prunedTokens: number
     prunedToolCount: number
     prunedMessageCount: number
@@ -73,9 +77,10 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
         assistant: 0,
         tools: 0,
         toolCount: 0,
+        toolsInContextCount: 0,
         prunedTokens: state.stats.totalPruneTokens,
-        prunedToolCount: state.prune.tools.size,
-        prunedMessageCount: state.prune.messages.size,
+        prunedToolCount: 0,
+        prunedMessageCount: 0,
         total: 0,
     }
 
@@ -83,7 +88,11 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
     for (const msg of messages) {
         if (msg.info.role === "assistant") {
             const assistantInfo = msg.info as AssistantMessage
-            if (assistantInfo.tokens?.input > 0 || assistantInfo.tokens?.cache?.read > 0) {
+            if (
+                assistantInfo.tokens?.input > 0 ||
+                assistantInfo.tokens?.cache?.read > 0 ||
+                assistantInfo.tokens?.cache?.write > 0
+            ) {
                 firstAssistant = assistantInfo
                 break
             }
@@ -114,19 +123,30 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
     const toolOutputParts: string[] = []
     let firstUserText = ""
     let foundFirstUser = false
-    const foundToolIds = new Set<string>()
+    const allToolIds = new Set<string>()
+    const activeToolIds = new Set<string>()
+    const prunedByMessageToolIds = new Set<string>()
+    const allMessageIds = new Set<string>()
 
     for (const msg of messages) {
+        allMessageIds.add(msg.info.id)
         const parts = Array.isArray(msg.parts) ? msg.parts : []
         const isCompacted = isMessageCompacted(state, msg)
+        const pruneEntry = state.prune.messages.byMessageId.get(msg.info.id)
+        const isMessagePruned = !!pruneEntry && pruneEntry.activeBlockIds.length > 0
         const isIgnoredUser = msg.info.role === "user" && isIgnoredUserMessage(msg)
 
         for (const part of parts) {
             if (part.type === "tool") {
                 const toolPart = part as ToolPart
-                if (toolPart.callID && !foundToolIds.has(toolPart.callID)) {
-                    breakdown.toolCount++
-                    foundToolIds.add(toolPart.callID)
+                if (toolPart.callID) {
+                    allToolIds.add(toolPart.callID)
+                    if (!isCompacted) {
+                        activeToolIds.add(toolPart.callID)
+                    }
+                    if (isMessagePruned) {
+                        prunedByMessageToolIds.add(toolPart.callID)
+                    }
                 }
 
                 const isPruned = toolPart.callID && state.prune.tools.has(toolPart.callID)
@@ -167,6 +187,28 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
         }
     }
 
+    const prunedByToolIds = new Set<string>()
+    for (const id of allToolIds) {
+        if (state.prune.tools.has(id)) {
+            prunedByToolIds.add(id)
+        }
+    }
+
+    const prunedToolIds = new Set<string>([...prunedByToolIds, ...prunedByMessageToolIds])
+    const toolsInContextCount = [...activeToolIds].filter((id) => !prunedByToolIds.has(id)).length
+
+    let prunedMessageCount = 0
+    for (const [id, entry] of state.prune.messages.byMessageId) {
+        if (allMessageIds.has(id) && entry.activeBlockIds.length > 0) {
+            prunedMessageCount++
+        }
+    }
+
+    breakdown.toolCount = allToolIds.size
+    breakdown.toolsInContextCount = toolsInContextCount
+    breakdown.prunedToolCount = prunedToolIds.size
+    breakdown.prunedMessageCount = prunedMessageCount
+
     const firstUserTokens = countTokens(firstUserText)
     breakdown.user = countTokens(userTextParts.join("\n"))
     const toolInputTokens = countTokens(toolInputParts.join("\n"))
@@ -174,7 +216,9 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
 
     if (firstAssistant) {
         const firstInput =
-            (firstAssistant.tokens?.input || 0) + (firstAssistant.tokens?.cache?.read || 0)
+            (firstAssistant.tokens?.input || 0) +
+            (firstAssistant.tokens?.cache?.read || 0) +
+            (firstAssistant.tokens?.cache?.write || 0)
         breakdown.system = Math.max(0, firstInput - firstUserTokens)
     }
 
@@ -198,8 +242,7 @@ function formatContextMessage(breakdown: TokenBreakdown): string {
     const lines: string[] = []
     const barWidth = 30
 
-    const toolsInContext = breakdown.toolCount - breakdown.prunedToolCount
-    const toolsLabel = `Tools (${toolsInContext})`
+    const toolsLabel = `Tools (${breakdown.toolsInContextCount})`
 
     const categories = [
         { label: "System", value: breakdown.system, char: "█" },

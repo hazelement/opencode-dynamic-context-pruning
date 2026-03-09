@@ -1,8 +1,7 @@
 import { PluginConfig } from "../config"
 import { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
-import { getFilePathsFromParameters, isProtected } from "../protected-file-patterns"
-import { getLastUserMessage } from "../shared-utils"
+import { getFilePathsFromParameters, isFilePathProtected } from "../protected-patterns"
 import { getTotalToolTokens } from "./utils"
 
 /**
@@ -58,7 +57,7 @@ export const supersedeWrites = (
         }
         const filePath = filePaths[0]
 
-        if (isProtected(filePaths, config.protectedFilePatterns)) {
+        if (isFilePathProtected(filePaths, config.protectedFilePatterns)) {
             continue
         }
 
@@ -106,20 +105,10 @@ export const supersedeWrites = (
     }
 
     if (newPruneIds.length > 0) {
-        const decisionMessageId = getLastUserMessage(messages)?.info.id || ""
-        if (!decisionMessageId) {
-            logger.warn("Supersede writes prune origin unavailable - missing user message")
-        }
         state.stats.totalPruneTokens += getTotalToolTokens(state, newPruneIds)
         for (const id of newPruneIds) {
             const entry = state.toolParameters.get(id)
             state.prune.tools.set(id, entry?.tokenCount ?? 0)
-            if (decisionMessageId) {
-                state.prune.origins.set(id, {
-                    source: "supersedeWrites",
-                    originMessageId: decisionMessageId,
-                })
-            }
         }
         logger.debug(`Marked ${newPruneIds.length} superseded write tool calls for pruning`)
     }

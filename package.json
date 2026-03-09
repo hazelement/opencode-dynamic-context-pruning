@@ -1,19 +1,17 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
     "name": "@tarquinen/opencode-dcp",
-    "version": "2.1.8",
+    "version": "2.2.9-beta0",
     "type": "module",
     "description": "OpenCode plugin that optimizes token usage by pruning obsolete tool outputs from conversation context",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "scripts": {
         "clean": "rm -rf dist",
-        "generate:prompts": "tsx scripts/generate-prompts.ts",
-        "prebuild": "npm run generate:prompts",
         "build": "npm run clean && tsc",
         "prepublishOnly": "npm run build",
         "dev": "opencode plugin dev",
-        "typecheck": "npm run generate:prompts && tsc --noEmit",
+        "typecheck": "tsc --noEmit",
         "test": "node --import tsx --test tests/*.test.ts",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
@@ -44,6 +42,7 @@
     "dependencies": {
         "@anthropic-ai/tokenizer": "^0.0.4",
         "@opencode-ai/sdk": "^1.1.48",
+        "fuzzball": "^2.2.3",
         "jsonc-parser": "^3.3.1",
         "zod": "^4.3.6"
     },

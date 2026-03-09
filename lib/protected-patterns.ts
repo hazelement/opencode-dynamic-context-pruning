@@ -6,14 +6,6 @@ function escapeRegExpChar(ch: string): string {
     return /[\\.^$+{}()|\[\]]/.test(ch) ? `\\${ch}` : ch
 }
 
-/**
- * Basic glob matching with support for `**`, `*`, and `?`.
- *
- * Notes:
- * - Matching is performed against the full (normalized) string.
- * - `*` and `?` do not match `/`.
- * - `**` matches across `/`.
- */
 export function matchesGlob(inputPath: string, pattern: string): boolean {
     if (!pattern) return false
 
@@ -105,9 +97,32 @@ export function getFilePathsFromParameters(tool: string, parameters: unknown): s
     return [...new Set(paths)].filter((p) => p.length > 0)
 }
 
-export function isProtected(filePaths: string[], patterns: string[]): boolean {
+export function isFilePathProtected(filePaths: string[], patterns: string[]): boolean {
     if (!filePaths || filePaths.length === 0) return false
     if (!patterns || patterns.length === 0) return false
 
     return filePaths.some((path) => patterns.some((pattern) => matchesGlob(path, pattern)))
+}
+
+const GLOB_CHARS = /[*?]/
+
+export function isToolNameProtected(toolName: string, patterns: string[]): boolean {
+    if (!toolName || !patterns || patterns.length === 0) return false
+
+    const exactPatterns: Set<string> = new Set()
+    const globPatterns: string[] = []
+
+    for (const pattern of patterns) {
+        if (GLOB_CHARS.test(pattern)) {
+            globPatterns.push(pattern)
+        } else {
+            exactPatterns.add(pattern)
+        }
+    }
+
+    if (exactPatterns.has(toolName)) {
+        return true
+    }
+
+    return globPatterns.some((pattern) => matchesGlob(toolName, pattern))
 }

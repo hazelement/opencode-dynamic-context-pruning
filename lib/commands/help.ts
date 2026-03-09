@@ -26,18 +26,20 @@ const BASE_COMMANDS: [string, string][] = [
 ]
 
 const TOOL_COMMANDS: Record<string, [string, string]> = {
-    prune: ["/dcp prune [focus]", "Trigger manual prune tool execution"],
-    distill: ["/dcp distill [focus]", "Trigger manual distill tool execution"],
     compress: ["/dcp compress [focus]", "Trigger manual compress tool execution"],
+    decompress: ["/dcp decompress <n>", "Restore selected compression"],
+    recompress: ["/dcp recompress <n>", "Re-apply a user-decompressed compression"],
 }
 
 function getVisibleCommands(config: PluginConfig): [string, string][] {
     const commands = [...BASE_COMMANDS]
-    for (const tool of ["prune", "distill", "compress"] as const) {
-        if (config.tools[tool].permission !== "deny") {
-            commands.push(TOOL_COMMANDS[tool])
-        }
+
+    if (config.compress.permission !== "deny") {
+        commands.push(TOOL_COMMANDS.compress)
+        commands.push(TOOL_COMMANDS.decompress)
+        commands.push(TOOL_COMMANDS.recompress)
     }
+
     return commands
 }
 
@@ -64,7 +66,7 @@ export async function handleHelpCommand(ctx: HelpCommandContext): Promise<void> 
     const { client, state, logger, sessionId, messages } = ctx
 
     const { config } = ctx
-    const message = formatHelpMessage(state.manualMode, config)
+    const message = formatHelpMessage(!!state.manualMode, config)
 
     const params = getCurrentParams(state, messages, logger)
     await sendIgnoredMessage(client, sessionId, message, params, logger)

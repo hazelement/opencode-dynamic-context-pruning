@@ -28,7 +28,12 @@ Thumbs.db
 # OpenCode
 .opencode/
 
-# Generated prompt files (from scripts/generate-prompts.ts)
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Legacy generated prompt files
 lib/prompts/**/*.generated.ts
 
 # Tests
@@ -41,9 +46,3 @@ docs/
 SCHEMA_NOTES.md
 
 repomix-output.xml
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd

@@ -21,29 +21,46 @@ export interface SessionStats {
     totalPruneTokens: number
 }
 
-export interface CompressSummary {
+export interface PrunedMessageEntry {
+    tokenCount: number
+    allBlockIds: number[]
+    activeBlockIds: number[]
+}
+
+export interface CompressionBlock {
     blockId: number
+    active: boolean
+    deactivatedByUser: boolean
+    compressedTokens: number
+    topic: string
+    startId: string
+    endId: string
     anchorMessageId: string
+    compressMessageId: string
+    includedBlockIds: number[]
+    consumedBlockIds: number[]
+    parentBlockIds: number[]
+    directMessageIds: string[]
+    directToolIds: string[]
+    effectiveMessageIds: string[]
+    effectiveToolIds: string[]
+    createdAt: number
+    deactivatedAt?: number
+    deactivatedByBlockId?: number
     summary: string
 }
 
-export type PruneOriginSource =
-    | "prune"
-    | "distill"
-    | "sweep"
-    | "deduplication"
-    | "supersedeWrites"
-    | "purgeErrors"
-
-export interface PruneOrigin {
-    source: PruneOriginSource
-    originMessageId: string
+export interface PruneMessagesState {
+    byMessageId: Map<string, PrunedMessageEntry>
+    blocksById: Map<number, CompressionBlock>
+    activeBlockIds: Set<number>
+    activeByAnchorMessageId: Map<string, number>
+    nextBlockId: number
 }
 
 export interface Prune {
     tools: Map<string, number>
-    messages: Map<string, number>
-    origins: Map<string, PruneOrigin>
+    messages: PruneMessagesState
 }
 
 export interface PendingManualTrigger {
@@ -57,21 +74,27 @@ export interface MessageIdState {
     nextRef: number
 }
 
+export interface Nudges {
+    contextLimitAnchors: Set<string>
+    turnNudgeAnchors: Set<string>
+    iterationNudgeAnchors: Set<string>
+}
+
 export interface SessionState {
     sessionId: string | null
     isSubAgent: boolean
-    manualMode: boolean
+    manualMode: false | "active" | "compress-pending"
     pendingManualTrigger: PendingManualTrigger | null
     prune: Prune
-    compressSummaries: CompressSummary[]
+    nudges: Nudges
     stats: SessionStats
     toolParameters: Map<string, ToolParameterEntry>
+    subAgentResultCache: Map<string, string>
     toolIdList: string[]
     messageIds: MessageIdState
-    nudgeCounter: number
-    lastToolPrune: boolean
     lastCompaction: number
     currentTurn: number
     variant: string | undefined
     modelContextLimit: number | undefined
+    systemPromptTokens: number | undefined
 }

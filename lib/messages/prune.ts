@@ -9,8 +9,6 @@ const PRUNED_TOOL_OUTPUT_REPLACEMENT =
     "[Output removed to save context - information superseded or no longer needed]"
 const PRUNED_TOOL_ERROR_INPUT_REPLACEMENT = "[input removed due to failed tool call]"
 const PRUNED_QUESTION_INPUT_REPLACEMENT = "[questions removed - see output for user's answers]"
-const PRUNED_COMPRESS_SUMMARY_REPLACEMENT =
-    "[summary removed to save context - see injected compressed block]"
 
 export const prune = (
     state: SessionState,
@@ -19,7 +17,7 @@ export const prune = (
     messages: WithParts[],
 ): void => {
     filterCompressedRanges(state, logger, messages)
-    pruneFullTool(state, logger, messages)
+    // pruneFullTool(state, logger, messages)
     pruneToolOutputs(state, logger, messages)
     pruneToolInputs(state, logger, messages)
     pruneToolErrors(state, logger, messages)
@@ -109,14 +107,6 @@ const pruneToolInputs = (state: SessionState, logger: Logger, messages: WithPart
                 continue
             }
 
-            // if (part.tool === "compress" && part.state.status === "completed") {
-            //     const content = part.state.input?.content
-            //     if (content && typeof content === "object" && "summary" in content) {
-            //         content.summary = PRUNED_COMPRESS_SUMMARY_REPLACEMENT
-            //     }
-            //     continue
-            // }
-
             if (!state.prune.tools.has(part.callID)) {
                 continue
             }
@@ -170,7 +160,10 @@ const filterCompressedRanges = (
     logger: Logger,
     messages: WithParts[],
 ): void => {
-    if (!state.prune.messages?.size) {
+    if (
+        state.prune.messages.byMessageId.size === 0 &&
+        state.prune.messages.activeByAnchorMessageId.size === 0
+    ) {
         return
     }
 
@@ -180,10 +173,16 @@ const filterCompressedRanges = (
         const msgId = msg.info.id
 
         // Check if there's a summary to inject at this anchor point
-        const summary = state.compressSummaries?.find((s) => s?.anchorMessageId === msgId)
+        const blockId = state.prune.messages.activeByAnchorMessageId.get(msgId)
+        const summary =
+            blockId !== undefined ? state.prune.messages.blocksById.get(blockId) : undefined
         if (summary) {
             const rawSummaryContent = (summary as { summary?: unknown }).summary
-            if (typeof rawSummaryContent !== "string" || rawSummaryContent.length === 0) {
+            if (
+                summary.active !== true ||
+                typeof rawSummaryContent !== "string" ||
+                rawSummaryContent.length === 0
+            ) {
                 logger.warn("Skipping malformed compress summary", {
                     anchorMessageId: msgId,
                     blockId: (summary as { blockId?: unknown }).blockId,
@@ -219,7 +218,8 @@ const filterCompressedRanges = (
         }
 
         // Skip messages that are in the prune list
-        if (state.prune.messages.has(msgId)) {
+        const pruneEntry = state.prune.messages.byMessageId.get(msgId)
+        if (pruneEntry && pruneEntry.activeBlockIds.length > 0) {
             continue
         }
 
