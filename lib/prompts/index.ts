@@ -1,59 +1,40 @@
-// Generated prompts (from .md files via scripts/generate-prompts.ts)
-import { SYSTEM as SYSTEM_PROMPT } from "./_codegen/system.generated"
-import { NUDGE } from "./_codegen/nudge.generated"
-import { COMPRESS_NUDGE } from "./_codegen/compress-nudge.generated"
-import { PRUNE as PRUNE_TOOL_SPEC } from "./_codegen/prune.generated"
-import { DISTILL as DISTILL_TOOL_SPEC } from "./_codegen/distill.generated"
-import { COMPRESS as COMPRESS_TOOL_SPEC } from "./_codegen/compress.generated"
+import type { RuntimePrompts } from "./store"
 
-export interface ToolFlags {
-    distill: boolean
-    compress: boolean
-    prune: boolean
-    manual: boolean
+function stripLegacyInlineComments(content: string): string {
+    return content.replace(/^[ \t]*\/\/.*?\/\/[ \t]*$/gm, "")
 }
 
-function processConditionals(template: string, flags: ToolFlags): string {
-    const tools = ["distill", "compress", "prune", "manual"] as const
-    let result = template
-    // Strip comments: // ... //
-    result = result.replace(/\/\/.*?\/\//g, "")
-    // Process tool conditionals
-    for (const tool of tools) {
-        const regex = new RegExp(`<${tool}>([\\s\\S]*?)</${tool}>`, "g")
-        result = result.replace(regex, (_, content) => (flags[tool] ? content : ""))
+function injectIntoSystemReminder(systemPrompt: string, overlays: string[]): string {
+    if (overlays.length === 0) {
+        return systemPrompt
     }
-    // Collapse multiple blank/whitespace-only lines to single blank line
-    return result.replace(/\n([ \t]*\n)+/g, "\n\n").trim()
-}
 
-export function renderSystemPrompt(flags: ToolFlags): string {
-    return processConditionals(SYSTEM_PROMPT, flags)
-}
-
-export function renderNudge(flags: ToolFlags): string {
-    return processConditionals(NUDGE, flags)
-}
-
-export function renderCompressNudge(): string {
-    return COMPRESS_NUDGE
-}
-
-const PROMPTS: Record<string, string> = {
-    "prune-tool-spec": PRUNE_TOOL_SPEC,
-    "distill-tool-spec": DISTILL_TOOL_SPEC,
-    "compress-tool-spec": COMPRESS_TOOL_SPEC,
-}
-
-export function loadPrompt(name: string, vars?: Record<string, string>): string {
-    let content = PROMPTS[name]
-    if (!content) {
-        throw new Error(`Prompt not found: ${name}`)
+    const closeTag = "</system-reminder>"
+    const closeTagIndex = systemPrompt.lastIndexOf(closeTag)
+    if (closeTagIndex === -1) {
+        return [systemPrompt, ...overlays].join("\n\n")
     }
-    if (vars) {
-        for (const [key, value] of Object.entries(vars)) {
-            content = content.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value)
-        }
+
+    const beforeClose = systemPrompt.slice(0, closeTagIndex).trimEnd()
+    const afterClose = systemPrompt.slice(closeTagIndex)
+    return `${beforeClose}\n\n${overlays.join("\n\n")}\n\n${afterClose}`
+}
+
+export function renderSystemPrompt(
+    prompts: RuntimePrompts,
+    manual?: boolean,
+    subagent?: boolean,
+): string {
+    const overlays: string[] = []
+    if (manual) {
+        overlays.push(prompts.manualOverlay.trim())
     }
-    return content
+
+    if (subagent) {
+        overlays.push(prompts.subagentOverlay.trim())
+    }
+
+    const strippedSystem = stripLegacyInlineComments(prompts.system).trim()
+    const withOverlays = injectIntoSystemReminder(strippedSystem, overlays)
+    return withOverlays.replace(/\n([ \t]*\n)+/g, "\n\n").trim()
 }

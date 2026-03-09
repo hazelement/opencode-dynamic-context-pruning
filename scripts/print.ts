@@ -1,117 +1,103 @@
 #!/usr/bin/env npx tsx
 
-import { renderSystemPrompt, renderNudge, type ToolFlags } from "../lib/prompts/index.js"
-import {
-    wrapPrunableTools,
-    wrapCompressContext,
-    wrapCooldownMessage,
-} from "../lib/messages/inject.js"
+import { Logger } from "../lib/logger"
+import { renderSystemPrompt } from "../lib/prompts"
+import { PromptStore, PROMPT_KEYS, type PromptKey, type RuntimePrompts } from "../lib/prompts/store"
+
+function normalizePromptKey(value: string): PromptKey | null {
+    const normalized = value.trim().toLowerCase()
+    return PROMPT_KEYS.includes(normalized as PromptKey) ? (normalized as PromptKey) : null
+}
+
+function getPromptByKey(prompts: RuntimePrompts, key: PromptKey): string {
+    switch (key) {
+        case "system":
+            return prompts.system
+        case "compress":
+            return prompts.compress
+        case "context-limit-nudge":
+            return prompts.contextLimitNudge
+        case "turn-nudge":
+            return prompts.turnNudge
+        case "iteration-nudge":
+            return prompts.iterationNudge
+    }
+}
 
 const args = process.argv.slice(2)
+const showHelp = args.includes("-h") || args.includes("--help")
 
-const flags: ToolFlags = {
-    distill: args.includes("-d") || args.includes("--distill"),
-    compress: args.includes("-c") || args.includes("--compress"),
-    prune: args.includes("-p") || args.includes("--prune"),
-}
-
-// Default to all enabled if none specified
-if (!flags.prune && !flags.distill && !flags.compress) {
-    flags.prune = true
-    flags.distill = true
-    flags.compress = true
-}
-
-const showSystem = args.includes("--system")
-const showNudge = args.includes("--nudge")
-const showPruneList = args.includes("--prune-list")
-const showCompressContext = args.includes("--compress-context")
-const showCooldown = args.includes("--cooldown")
-const showHelp = args.includes("--help") || args.includes("-h")
-
-if (
-    showHelp ||
-    (!showSystem && !showNudge && !showPruneList && !showCompressContext && !showCooldown)
-) {
+if (showHelp) {
     console.log(`
-Usage: bun run dcp [TYPE] [-d] [-c] [-p]
+DCP Prompt Preview CLI
 
-Types:
-  --system            System prompt
-  --nudge             Nudge prompt
-  --prune-list        Example prunable tools list
-  --compress-context  Example compress context
-  --cooldown          Cooldown message after pruning
+Usage:
+  npm run dcp -- [options]
 
-Tool flags (for --system and --nudge):
-  -d, --distill       Enable distill tool
-  -c, --compress      Enable compress tool
-  -p, --prune         Enable prune tool
+Options:
+  --list                   List available prompt keys
+  --show <key>             Print effective prompt text for key
+  --system                 Print effective system prompt with no overlays
+  --system-manual          Print system prompt with manual overlay
+  --system-subagent        Print system prompt with subagent overlay
+  --system-all             Print system prompt with both overlays
 
-If no tool flags specified, all are enabled.
+Prompt keys:
+  system, compress, context-limit-nudge,
+  turn-nudge, iteration-nudge
 
 Examples:
-  bun run dcp --system -d -c -p   # System prompt with all tools
-  bun run dcp --system -p         # System prompt with prune only
-  bun run dcp --nudge -d -c       # Nudge with distill and compress
-  bun run dcp --prune-list        # Example prunable tools list
+  npm run dcp -- --list
+  npm run dcp -- --show compress
+  npm run dcp -- --system-all
 `)
     process.exit(0)
 }
 
-const header = (title: string) => {
-    console.log()
-    console.log("─".repeat(60))
-    console.log(title)
-    console.log("─".repeat(60))
+const store = new PromptStore(new Logger(false), process.cwd())
+store.reload()
+
+const runtimePrompts = store.getRuntimePrompts()
+
+if (args.includes("--list")) {
+    console.log("Available prompts:")
+    for (const key of PROMPT_KEYS) {
+        console.log(`- ${key}`)
+    }
+    process.exit(0)
 }
 
-if (showSystem) {
-    const enabled = [
-        flags.distill && "distill",
-        flags.compress && "compress",
-        flags.prune && "prune",
-    ]
-        .filter(Boolean)
-        .join(", ")
-    header(`SYSTEM PROMPT (tools: ${enabled})`)
-    console.log(renderSystemPrompt(flags))
+const showIndex = args.indexOf("--show")
+if (showIndex >= 0) {
+    const keyArg = args[showIndex + 1]
+    if (!keyArg) {
+        console.error("Missing prompt key for --show")
+        process.exit(1)
+    }
+
+    const key = normalizePromptKey(keyArg)
+    if (!key) {
+        console.error(`Unknown prompt key: ${keyArg}`)
+        process.exit(1)
+    }
+
+    console.log(getPromptByKey(runtimePrompts, key))
+    process.exit(0)
 }
 
-if (showNudge) {
-    const enabled = [
-        flags.distill && "distill",
-        flags.compress && "compress",
-        flags.prune && "prune",
-    ]
-        .filter(Boolean)
-        .join(", ")
-    header(`NUDGE (tools: ${enabled})`)
-    console.log(renderNudge(flags))
+if (args.includes("--system-all")) {
+    console.log(renderSystemPrompt(runtimePrompts, true, true))
+    process.exit(0)
 }
 
-if (showPruneList) {
-    header("PRUNABLE TOOLS LIST (mock example)")
-    const mockList = `5: read, /path/to/file.ts
-8: bash, npm run build
-12: glob, src/**/*.ts
-15: read, /path/to/another-file.ts`
-    console.log(wrapPrunableTools(mockList))
+if (args.includes("--system-manual")) {
+    console.log(renderSystemPrompt(runtimePrompts, true, false))
+    process.exit(0)
 }
 
-if (showCompressContext) {
-    header("COMPRESS CONTEXT (mock example)")
-    console.log(wrapCompressContext(45))
+if (args.includes("--system-subagent")) {
+    console.log(renderSystemPrompt(runtimePrompts, false, true))
+    process.exit(0)
 }
 
-if (showCooldown) {
-    const enabled = [
-        flags.distill && "distill",
-        flags.compress && "compress",
-        flags.prune && "prune",
-    ]
-        .filter(Boolean)
-        .join(", ")
-    header(`COOLDOWN MESSAGE (tools: ${enabled})`)
-    console.log(wrapCooldownMessage(flags))
-}
+console.log(renderSystemPrompt(runtimePrompts, false, false))

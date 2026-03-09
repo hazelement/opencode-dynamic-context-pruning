@@ -112,7 +112,7 @@ export class Logger {
      * Strips unnecessary metadata from messages for cleaner debug logs.
      *
      * Removed:
-     * - All IDs (id, sessionID, messageID, parentID, callID on parts)
+     * - All IDs (id, sessionID, messageID, parentID)
      * - summary, path, cost, model, agent, mode, finish, providerID, modelID
      * - step-start and step-finish parts entirely
      * - snapshot fields
@@ -121,7 +121,7 @@ export class Logger {
      * Kept:
      * - role, time (created only), tokens (input, output, reasoning, cache)
      * - text, reasoning, tool parts with content
-     * - tool calls with: tool, callID, input, output
+     * - tool calls with: tool, callID, input, output, metadata
      */
     private minimizeForDebug(messages: any[]): any[] {
         return messages.map((msg) => {
@@ -151,14 +151,15 @@ export class Logger {
 
                         if (part.type === "text") {
                             if (part.ignored) return null
-                            return { type: "text", text: part.text }
+                            const textPart: any = { type: "text", text: part.text }
+                            if (part.metadata) textPart.metadata = part.metadata
+                            return textPart
                         }
 
                         if (part.type === "reasoning") {
-                            return {
-                                type: "reasoning",
-                                text: part.text,
-                            }
+                            const reasoningPart: any = { type: "reasoning", text: part.text }
+                            if (part.metadata) reasoningPart.metadata = part.metadata
+                            return reasoningPart
                         }
 
                         if (part.type === "tool") {
@@ -179,6 +180,18 @@ export class Logger {
                             }
                             if (part.state?.error) {
                                 toolPart.error = part.state.error
+                            }
+                            if (part.metadata) {
+                                toolPart.metadata = part.metadata
+                            }
+                            if (part.state?.metadata) {
+                                toolPart.metadata = {
+                                    ...(toolPart.metadata || {}),
+                                    ...part.state.metadata,
+                                }
+                            }
+                            if (part.state?.title) {
+                                toolPart.title = part.state.title
                             }
 
                             return toolPart
@@ -202,7 +215,9 @@ export class Logger {
                 await mkdir(contextDir, { recursive: true })
             }
 
-            const minimized = this.minimizeForDebug(messages)
+            const minimized = this.minimizeForDebug(messages).filter(
+                (msg) => msg.parts && msg.parts.length > 0,
+            )
             const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
             const contextFile = join(contextDir, `${timestamp}.json`)
             await writeFile(contextFile, JSON.stringify(minimized, null, 2))

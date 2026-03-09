@@ -8,24 +8,33 @@ import * as fs from "fs/promises"
 import { existsSync } from "fs"
 import { homedir } from "os"
 import { join } from "path"
-import type { SessionState, SessionStats, CompressSummary, PruneOrigin } from "./types"
+import type { CompressionBlock, PrunedMessageEntry, SessionState, SessionStats } from "./types"
 import type { Logger } from "../logger"
 
 /** Prune state as stored on disk */
+export interface PersistedPruneMessagesState {
+    byMessageId: Record<string, PrunedMessageEntry>
+    blocksById: Record<string, CompressionBlock>
+    activeBlockIds: number[]
+    activeByAnchorMessageId: Record<string, number>
+    nextBlockId: number
+}
+
 export interface PersistedPrune {
-    // New format: tool/message IDs with token counts
     tools?: Record<string, number>
-    messages?: Record<string, number>
-    origins?: Record<string, PruneOrigin>
-    // Legacy format: plain ID arrays (backward compatibility)
-    toolIds?: string[]
-    messageIds?: string[]
+    messages?: PersistedPruneMessagesState
+}
+
+export interface PersistedNudges {
+    contextLimitAnchors: string[]
+    turnNudgeAnchors?: string[]
+    iterationNudgeAnchors?: string[]
 }
 
 export interface PersistedSessionState {
     sessionName?: string
     prune: PersistedPrune
-    compressSummaries: CompressSummary[]
+    nudges: PersistedNudges
     stats: SessionStats
     lastUpdated: string
 }
@@ -64,10 +73,25 @@ export async function saveSessionState(
             sessionName: sessionName,
             prune: {
                 tools: Object.fromEntries(sessionState.prune.tools),
-                messages: Object.fromEntries(sessionState.prune.messages),
-                origins: Object.fromEntries(sessionState.prune.origins),
+                messages: {
+                    byMessageId: Object.fromEntries(sessionState.prune.messages.byMessageId),
+                    blocksById: Object.fromEntries(
+                        Array.from(sessionState.prune.messages.blocksById.entries()).map(
+                            ([blockId, block]) => [String(blockId), block],
+                        ),
+                    ),
+                    activeBlockIds: Array.from(sessionState.prune.messages.activeBlockIds),
+                    activeByAnchorMessageId: Object.fromEntries(
+                        sessionState.prune.messages.activeByAnchorMessageId,
+                    ),
+                    nextBlockId: sessionState.prune.messages.nextBlockId,
+                },
             },
-            compressSummaries: sessionState.compressSummaries,
+            nudges: {
+                contextLimitAnchors: Array.from(sessionState.nudges.contextLimitAnchors),
+                turnNudgeAnchors: Array.from(sessionState.nudges.turnNudgeAnchors),
+                iterationNudgeAnchors: Array.from(sessionState.nudges.iterationNudgeAnchors),
+            },
             stats: sessionState.stats,
             lastUpdated: new Date().toISOString(),
         }
@@ -102,70 +126,70 @@ export async function loadSessionState(
         const content = await fs.readFile(filePath, "utf-8")
         const state = JSON.parse(content) as PersistedSessionState
 
-        const hasNewFormat = state?.prune?.tools && typeof state.prune.tools === "object"
-        const hasLegacyFormat = Array.isArray(state?.prune?.toolIds)
-        if (!state || !state.prune || (!hasNewFormat && !hasLegacyFormat) || !state.stats) {
+        const hasPruneTools = state?.prune?.tools && typeof state.prune.tools === "object"
+        const hasPruneMessages = state?.prune?.messages && typeof state.prune.messages === "object"
+        const hasNudgeFormat = state?.nudges && typeof state.nudges === "object"
+        if (
+            !state ||
+            !state.prune ||
+            !hasPruneTools ||
+            !hasPruneMessages ||
+            !state.stats ||
+            !hasNudgeFormat
+        ) {
             logger.warn("Invalid session state file, ignoring", {
                 sessionId: sessionId,
             })
             return null
         }
 
-        if (Array.isArray(state.compressSummaries)) {
-            const migratedSummaries: CompressSummary[] = []
-            let nextBlockId = 1
-
-            for (const entry of state.compressSummaries) {
-                if (
-                    entry === null ||
-                    typeof entry !== "object" ||
-                    typeof entry.anchorMessageId !== "string" ||
-                    typeof entry.summary !== "string"
-                ) {
-                    continue
-                }
-
-                const blockId =
-                    typeof entry.blockId === "number" && Number.isInteger(entry.blockId)
-                        ? entry.blockId
-                        : nextBlockId
-                migratedSummaries.push({
-                    blockId,
-                    anchorMessageId: entry.anchorMessageId,
-                    summary: entry.summary,
-                })
-                nextBlockId = Math.max(nextBlockId, blockId + 1)
-            }
-
-            if (migratedSummaries.length !== state.compressSummaries.length) {
-                logger.warn("Filtered out malformed compressSummaries entries", {
-                    sessionId: sessionId,
-                    original: state.compressSummaries.length,
-                    valid: migratedSummaries.length,
-                })
-            }
-
-            const seenBlockIds = new Set<number>()
-            const dedupedSummaries = migratedSummaries.filter((summary) => {
-                if (seenBlockIds.has(summary.blockId)) {
-                    return false
-                }
-                seenBlockIds.add(summary.blockId)
-                return true
+        const rawContextLimitAnchors = Array.isArray(state.nudges.contextLimitAnchors)
+            ? state.nudges.contextLimitAnchors
+            : []
+        const validAnchors = rawContextLimitAnchors.filter(
+            (entry): entry is string => typeof entry === "string",
+        )
+        const dedupedAnchors = [...new Set(validAnchors)]
+        if (validAnchors.length !== rawContextLimitAnchors.length) {
+            logger.warn("Filtered out malformed contextLimitAnchors entries", {
+                sessionId: sessionId,
+                original: rawContextLimitAnchors.length,
+                valid: validAnchors.length,
             })
-
-            if (dedupedSummaries.length !== migratedSummaries.length) {
-                logger.warn("Removed duplicate compress block IDs", {
-                    sessionId: sessionId,
-                    original: migratedSummaries.length,
-                    valid: dedupedSummaries.length,
-                })
-            }
-
-            state.compressSummaries = dedupedSummaries
-        } else {
-            state.compressSummaries = []
         }
+        state.nudges.contextLimitAnchors = dedupedAnchors
+
+        const rawTurnNudgeAnchors = Array.isArray(state.nudges.turnNudgeAnchors)
+            ? state.nudges.turnNudgeAnchors
+            : []
+        const validSoftAnchors = rawTurnNudgeAnchors.filter(
+            (entry): entry is string => typeof entry === "string",
+        )
+        const dedupedSoftAnchors = [...new Set(validSoftAnchors)]
+        if (validSoftAnchors.length !== rawTurnNudgeAnchors.length) {
+            logger.warn("Filtered out malformed turnNudgeAnchors entries", {
+                sessionId: sessionId,
+                original: rawTurnNudgeAnchors.length,
+                valid: validSoftAnchors.length,
+            })
+        }
+        state.nudges.turnNudgeAnchors = dedupedSoftAnchors
+
+        const rawIterationNudgeAnchors = Array.isArray(state.nudges.iterationNudgeAnchors)
+            ? state.nudges.iterationNudgeAnchors
+            : []
+        const validIterationAnchors = rawIterationNudgeAnchors.filter(
+            (entry): entry is string => typeof entry === "string",
+        )
+        const dedupedIterationAnchors = [...new Set(validIterationAnchors)]
+        if (validIterationAnchors.length !== rawIterationNudgeAnchors.length) {
+            logger.warn("Filtered out malformed iterationNudgeAnchors entries", {
+                sessionId: sessionId,
+                original: rawIterationNudgeAnchors.length,
+                valid: validIterationAnchors.length,
+            })
+        }
+        state.nudges.iterationNudgeAnchors = dedupedIterationAnchors
 
         logger.info("Loaded session state from disk", {
             sessionId: sessionId,
@@ -214,10 +238,10 @@ export async function loadAllSessionStats(logger: Logger): Promise<AggregatedSta
                     result.totalTokens += state.stats.totalPruneTokens
                     result.totalTools += state.prune.tools
                         ? Object.keys(state.prune.tools).length
-                        : (state.prune.toolIds?.length ?? 0)
-                    result.totalMessages += state.prune.messages
-                        ? Object.keys(state.prune.messages).length
-                        : (state.prune.messageIds?.length ?? 0)
+                        : 0
+                    result.totalMessages += state.prune.messages?.byMessageId
+                        ? Object.keys(state.prune.messages.byMessageId).length
+                        : 0
                     result.sessionCount++
                 }
             } catch {

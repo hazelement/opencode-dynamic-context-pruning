@@ -1,11 +1,12 @@
 import type { SessionState, WithParts } from "./state"
+import { isIgnoredUserMessage } from "./messages/utils"
 
 const MESSAGE_REF_REGEX = /^m(\d{4})$/
 const BLOCK_REF_REGEX = /^b([1-9]\d*)$/
 const MESSAGE_ID_TAG_NAME = "dcp-message-id"
 
 const MESSAGE_REF_WIDTH = 4
-const MESSAGE_REF_MIN_INDEX = 0
+const MESSAGE_REF_MIN_INDEX = 1
 export const MESSAGE_REF_MAX_INDEX = 9999
 
 export type ParsedBoundaryId =
@@ -47,7 +48,13 @@ export function parseMessageRef(ref: string): number | null {
         return null
     }
     const index = Number.parseInt(match[1], 10)
-    return Number.isInteger(index) ? index : null
+    if (!Number.isInteger(index)) {
+        return null
+    }
+    if (index < MESSAGE_REF_MIN_INDEX || index > MESSAGE_REF_MAX_INDEX) {
+        return null
+    }
+    return index
 }
 
 export function parseBlockRef(ref: string): number | null {
@@ -89,8 +96,18 @@ export function formatMessageIdTag(ref: string): string {
 
 export function assignMessageRefs(state: SessionState, messages: WithParts[]): number {
     let assigned = 0
+    let skippedSubAgentPrompt = false
 
     for (const message of messages) {
+        if (message.info.role === "user" && isIgnoredUserMessage(message)) {
+            continue
+        }
+
+        if (state.isSubAgent && !skippedSubAgentPrompt && message.info.role === "user") {
+            skippedSubAgentPrompt = true
+            continue
+        }
+
         const rawMessageId = message.info.id
         if (typeof rawMessageId !== "string" || rawMessageId.length === 0) {
             continue

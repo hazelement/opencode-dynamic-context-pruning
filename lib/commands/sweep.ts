@@ -15,8 +15,12 @@ import { formatPrunedItemsList } from "../ui/utils"
 import { getCurrentParams, getTotalToolTokens } from "../strategies/utils"
 import { buildToolIdList, isIgnoredUserMessage } from "../messages/utils"
 import { saveSessionState } from "../state/persistence"
-import { getLastUserMessage, isMessageCompacted } from "../shared-utils"
-import { getFilePathsFromParameters, isProtected } from "../protected-file-patterns"
+import { isMessageCompacted } from "../shared-utils"
+import {
+    getFilePathsFromParameters,
+    isFilePathProtected,
+    isToolNameProtected,
+} from "../protected-patterns"
 import { syncToolCache } from "../state/tool-cache"
 
 export interface SweepCommandContext {
@@ -128,7 +132,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
     const protectedTools = config.commands.protectedTools
 
     syncToolCache(state, config, logger, messages)
-    buildToolIdList(state, messages, logger)
+    buildToolIdList(state, messages)
 
     // Parse optional numeric argument
     const numArg = args[0] ? parseInt(args[0], 10) : null
@@ -171,12 +175,12 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
         if (!entry) {
             return true
         }
-        if (protectedTools.includes(entry.tool)) {
+        if (isToolNameProtected(entry.tool, protectedTools)) {
             logger.debug(`Sweep: skipping protected tool ${entry.tool} (${id})`)
             return false
         }
         const filePaths = getFilePathsFromParameters(entry.tool, entry.parameters)
-        if (isProtected(filePaths, config.protectedFilePatterns)) {
+        if (isFilePathProtected(filePaths, config.protectedFilePatterns)) {
             logger.debug(`Sweep: skipping protected file path(s) ${filePaths.join(", ")} (${id})`)
             return false
         }
@@ -189,11 +193,11 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
         if (!entry) {
             return false
         }
-        if (protectedTools.includes(entry.tool)) {
+        if (isToolNameProtected(entry.tool, protectedTools)) {
             return true
         }
         const filePaths = getFilePathsFromParameters(entry.tool, entry.parameters)
-        if (isProtected(filePaths, config.protectedFilePatterns)) {
+        if (isFilePathProtected(filePaths, config.protectedFilePatterns)) {
             return true
         }
         return false

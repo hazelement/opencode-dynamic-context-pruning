@@ -24,13 +24,13 @@
             "type": "string",
             "enum": ["off", "minimal", "detailed"],
             "default": "detailed",
-            "description": "Level of notification shown when pruning occurs"
+            "description": "Level of notification shown when context management occurs"
         },
         "pruneNotificationType": {
             "type": "string",
             "enum": ["chat", "toast"],
             "default": "chat",
-            "description": "Where to display prune notifications (chat message or toast notification)"
+            "description": "Where to display notifications (chat message or toast notification)"
         },
         "commands": {
             "type": "object",
@@ -48,7 +48,7 @@
                         "type": "string"
                     },
                     "default": [],
-                    "description": "Additional tool names to protect from pruning via commands (e.g., /dcp sweep)"
+                    "description": "Additional tool names or wildcard patterns to protect from pruning via commands (e.g., /dcp sweep). Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                 }
             },
             "default": {
@@ -94,6 +94,27 @@
                 }
             }
         },
+        "experimental": {
+            "type": "object",
+            "description": "Experimental settings that may change in future releases",
+            "additionalProperties": false,
+            "properties": {
+                "allowSubAgents": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Allow DCP processing in subagent sessions"
+                },
+                "customPrompts": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable user-editable prompt overrides under dcp-prompts directories"
+                }
+            },
+            "default": {
+                "allowSubAgents": false,
+                "customPrompts": false
+            }
+        },
         "protectedFilePatterns": {
             "type": "array",
             "items": {
@@ -102,112 +123,113 @@
             "default": [],
             "description": "Glob patterns for files that should be protected from pruning (e.g., '**/*.config.ts')"
         },
-        "tools": {
+        "compress": {
             "type": "object",
-            "description": "Configuration for pruning tools",
+            "description": "Configuration for the unified compress tool",
             "additionalProperties": false,
             "properties": {
-                "settings": {
+                "permission": {
+                    "type": "string",
+                    "enum": ["ask", "allow", "deny"],
+                    "default": "allow",
+                    "description": "Permission mode (deny disables the tool)"
+                },
+                "showCompression": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show compression summaries in notifications"
+                },
+                "maxContextLimit": {
+                    "description": "Soft upper threshold. Above this, DCP keeps sending strong compression nudges (based on nudgeFrequency), so the model is pushed to compress. Accepts number or \"X%\" of the model context window.",
+                    "default": 100000,
+                    "oneOf": [
+                        {
+                            "type": "number"
+                        },
+                        {
+                            "type": "string",
+                            "pattern": "^\\d+(?:\\.\\d+)?%$"
+                        }
+                    ]
+                },
+                "minContextLimit": {
+                    "description": "Soft lower threshold for reminder nudges. Below this, turn/iteration reminders are off (compression is less likely). At or above this, reminders are on. Accepts number or \"X%\" of the model context window.",
+                    "default": 30000,
+                    "oneOf": [
+                        {
+                            "type": "number"
+                        },
+                        {
+                            "type": "string",
+                            "pattern": "^\\d+(?:\\.\\d+)?%$"
+                        }
+                    ]
+                },
+                "modelMaxLimits": {
+                    "description": "Per-model override for maxContextLimit by exact provider/model key. If set, this takes priority over the global maxContextLimit.",
                     "type": "object",
-                    "description": "General tool settings",
-                    "additionalProperties": false,
-                    "properties": {
-                        "nudgeEnabled": {
-                            "type": "boolean",
-                            "default": true,
-                            "description": "Enable nudge reminders to prune context"
-                        },
-                        "nudgeFrequency": {
-                            "type": "number",
-                            "default": 10,
-                            "description": "Frequency of nudge reminders (in turns)"
-                        },
-                        "protectedTools": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
+                    "additionalProperties": {
+                        "oneOf": [
+                            {
+                                "type": "number"
                             },
-                            "default": [],
-                            "description": "Tool names that should be protected from automatic pruning"
-                        },
-                        "contextLimit": {
-                            "description": "When session tokens exceed this limit, a compress nudge is injected (\"X%\" uses percentage of the model's context window)",
-                            "default": 100000,
-                            "oneOf": [
-                                {
-                                    "type": "number"
-                                },
-                                {
-                                    "type": "string",
-                                    "pattern": "^\\d+(?:\\.\\d+)?%$"
-                                }
-                            ]
-                        },
-                        "modelLimits": {
-                            "description": "Model-specific context limits by exact provider/model key. Examples: \"openai/gpt-5\", \"anthropic/claude-3-7-sonnet\", \"ollama/llama3.1\"",
-                            "type": "object",
-                            "additionalProperties": {
-                                "oneOf": [
-                                    {
-                                        "type": "number"
-                                    },
-                                    {
-                                        "type": "string",
-                                        "pattern": "^\\d+(?:\\.\\d+)?%$"
-                                    }
-                                ]
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(?:\\.\\d+)?%$"
                             }
-                        }
+                        ]
                     }
                 },
-                "distill": {
+                "modelMinLimits": {
+                    "description": "Per-model override for minContextLimit by exact provider/model key. If set, this takes priority over the global minContextLimit.",
                     "type": "object",
-                    "description": "Configuration for the distill tool",
-                    "additionalProperties": false,
-                    "properties": {
-                        "permission": {
-                            "type": "string",
-                            "enum": ["ask", "allow", "deny"],
-                            "default": "allow",
-                            "description": "Permission mode (deny disables the tool)"
-                        },
-                        "showDistillation": {
-                            "type": "boolean",
-                            "default": false,
-                            "description": "Show distillation output in the UI"
-                        }
+                    "additionalProperties": {
+                        "oneOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "string",
+                                "pattern": "^\\d+(?:\\.\\d+)?%$"
+                            }
+                        ]
                     }
                 },
-                "compress": {
-                    "type": "object",
-                    "description": "Configuration for the compress tool",
-                    "additionalProperties": false,
-                    "properties": {
-                        "permission": {
-                            "type": "string",
-                            "enum": ["ask", "allow", "deny"],
-                            "default": "ask",
-                            "description": "Permission mode (deny disables the tool)"
-                        },
-                        "showCompression": {
-                            "type": "boolean",
-                            "default": false,
-                            "description": "Show summary output in the UI"
-                        }
-                    }
+                "nudgeFrequency": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 1,
+                    "description": "How often the context-limit nudge fires when above maxContextLimit (1 = every fetch, 5 = every 5th fetch)"
                 },
-                "prune": {
-                    "type": "object",
-                    "description": "Configuration for the prune tool",
-                    "additionalProperties": false,
-                    "properties": {
-                        "permission": {
-                            "type": "string",
-                            "enum": ["ask", "allow", "deny"],
-                            "default": "allow",
-                            "description": "Permission mode (deny disables the tool)"
-                        }
-                    }
+                "iterationNudgeThreshold": {
+                    "type": "number",
+                    "default": 15,
+                    "minimum": 1,
+                    "description": "How many messages to wait after a user message before adding compression reminders."
+                },
+                "nudgeForce": {
+                    "type": "string",
+                    "enum": ["strong", "soft"],
+                    "default": "soft",
+                    "description": "Controls how likely compression is after user messages. 'strong' is more likely, 'soft' is less likely."
+                },
+                "flatSchema": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, the compress tool schema uses 4 flat string parameters (topic, startId, endId, summary) instead of the nested content object. This simplifies tool calls but changes TUI display."
+                },
+                "protectedTools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Tool names or wildcard patterns whose completed outputs should be appended to the compression summary. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
+                },
+                "protectUserMessages": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When enabled, your messages are never lost during compression"
                 }
             }
         },
@@ -232,7 +254,7 @@
                                 "type": "string"
                             },
                             "default": [],
-                            "description": "Tool names excluded from deduplication"
+                            "description": "Tool names or wildcard patterns excluded from deduplication. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                         }
                     }
                 },
@@ -269,7 +291,7 @@
                                 "type": "string"
                             },
                             "default": [],
-                            "description": "Tool names excluded from error purging"
+                            "description": "Tool names or wildcard patterns excluded from error purging. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                         }
                     }
                 }

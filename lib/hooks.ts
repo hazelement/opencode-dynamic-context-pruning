@@ -3,9 +3,15 @@ import type { Logger } from "./logger"
 import type { PluginConfig } from "./config"
 import { assignMessageRefs } from "./message-ids"
 import { syncToolCache } from "./state/tool-cache"
-import { deduplicate, supersedeWrites, purgeErrors } from "./strategies"
-import { prune, syncToolOrigins, insertPruneToolContext, insertMessageIdContext } from "./messages"
-import { buildToolIdList, isIgnoredUserMessage } from "./messages/utils"
+import {
+    prune,
+    syncCompressionBlocks,
+    injectCompressNudges,
+    injectMessageIds,
+    injectExtendedSubAgentResults,
+    stripStaleMetadata,
+} from "./messages"
+import { buildToolIdList, isIgnoredUserMessage, stripHallucinations } from "./messages/utils"
 import { checkSession } from "./state"
 import { renderSystemPrompt } from "./prompts"
 import { handleStatsCommand } from "./commands/stats"
@@ -13,7 +19,11 @@ import { handleContextCommand } from "./commands/context"
 import { handleHelpCommand } from "./commands/help"
 import { handleSweepCommand } from "./commands/sweep"
 import { handleManualToggleCommand, handleManualTriggerCommand } from "./commands/manual"
+import { handleDecompressCommand } from "./commands/decompress"
+import { handleRecompressCommand } from "./commands/recompress"
 import { ensureSessionInitialized } from "./state/state"
+import { cacheSystemPromptTokens } from "./ui/utils"
+import type { PromptStore } from "./prompts/store"
 
 const INTERNAL_AGENT_SIGNATURES = [
     "You are a title generator",
@@ -21,11 +31,12 @@ const INTERNAL_AGENT_SIGNATURES = [
     "Summarize what was done in this conversation",
 ]
 
-function applyPendingManualTriggerPrompt(
-    state: SessionState,
-    messages: WithParts[],
-    logger: Logger,
-): void {
+const DCP_MESSAGE_ID_TAG_REGEX = /<dcp-message-id>(?:m\d+|b\d+)<\/dcp-message-id>/g
+const TURN_NUDGE_BLOCK_REGEX = /<instruction\s+name=turn_nudge\b[^>]*>[\s\S]*?<\/instruction>/g
+const ITERATION_NUDGE_BLOCK_REGEX =
+    /<instruction\s+name=iteration_nudge\b[^>]*>[\s\S]*?<\/instruction>/g
+
+function applyManualPrompt(state: SessionState, messages: WithParts[], logger: Logger): void {
     const pending = state.pendingManualTrigger
     if (!pending) {
         return
@@ -49,7 +60,7 @@ function applyPendingManualTriggerPrompt(
 
             part.text = pending.prompt
             state.pendingManualTrigger = null
-            logger.debug("Applied pending manual trigger prompt", { sessionId: pending.sessionId })
+            logger.debug("Applied manual prompt", { sessionId: pending.sessionId })
             return
         }
     }
@@ -61,6 +72,7 @@ export function createSystemPromptHandler(
     state: SessionState,
     logger: Logger,
     config: PluginConfig,
+    prompts: PromptStore,
 ) {
     return async (
         input: { sessionID?: string; model: { limit: { context: number } } },
@@ -71,7 +83,7 @@ export function createSystemPromptHandler(
             logger.debug("Cached model context limit", { limit: state.modelContextLimit })
         }
 
-        if (state.isSubAgent) {
+        if (state.isSubAgent && !config.experimental.allowSubAgents) {
             return
         }
 
@@ -81,18 +93,17 @@ export function createSystemPromptHandler(
             return
         }
 
-        const flags = {
-            prune: config.tools.prune.permission !== "deny",
-            distill: config.tools.distill.permission !== "deny",
-            compress: config.tools.compress.permission !== "deny",
-            manual: state.manualMode,
-        }
-
-        if (!flags.prune && !flags.distill && !flags.compress) {
+        if (config.compress.permission === "deny") {
             return
         }
 
-        const newPrompt = renderSystemPrompt(flags)
+        prompts.reload()
+        const runtimePrompts = prompts.getRuntimePrompts()
+        const newPrompt = renderSystemPrompt(
+            runtimePrompts,
+            !!state.manualMode,
+            state.isSubAgent && config.experimental.allowSubAgents,
+        )
         if (output.system.length > 0) {
             output.system[output.system.length - 1] += "\n\n" + newPrompt
         } else {
@@ -106,29 +117,34 @@ export function createChatMessageTransformHandler(
     state: SessionState,
     logger: Logger,
     config: PluginConfig,
+    prompts: PromptStore,
 ) {
     return async (input: {}, output: { messages: WithParts[] }) => {
         await checkSession(client, state, logger, output.messages, config.manualMode.enabled)
 
-        if (state.isSubAgent) {
+        if (state.isSubAgent && !config.experimental.allowSubAgents) {
             return
         }
 
+        stripHallucinations(output.messages)
+        cacheSystemPromptTokens(state, output.messages)
         assignMessageRefs(state, output.messages)
-
+        syncCompressionBlocks(state, logger, output.messages)
         syncToolCache(state, config, logger, output.messages)
-        buildToolIdList(state, output.messages, logger)
-        syncToolOrigins(state, logger, output.messages)
-
-        deduplicate(state, logger, config, output.messages)
-        supersedeWrites(state, logger, config, output.messages)
-        purgeErrors(state, logger, config, output.messages)
-
+        buildToolIdList(state, output.messages)
         prune(state, logger, config, output.messages)
-        insertPruneToolContext(state, config, logger, output.messages)
-        insertMessageIdContext(state, config, output.messages)
-
-        applyPendingManualTriggerPrompt(state, output.messages, logger)
+        await injectExtendedSubAgentResults(
+            client,
+            state,
+            logger,
+            output.messages,
+            config.experimental.allowSubAgents,
+        )
+        prompts.reload()
+        injectCompressNudges(state, config, logger, output.messages, prompts.getRuntimePrompts())
+        injectMessageIds(state, config, output.messages)
+        applyManualPrompt(state, output.messages, logger)
+        stripStaleMetadata(output.messages)
 
         if (state.sessionId) {
             await logger.saveContext(state.sessionId, output.messages)
@@ -203,16 +219,14 @@ export function createCommandExecuteHandler(
                 throw new Error("__DCP_MANUAL_HANDLED__")
             }
 
-            if (
-                (subcommand === "prune" || subcommand === "distill" || subcommand === "compress") &&
-                config.tools[subcommand].permission !== "deny"
-            ) {
+            if (subcommand === "compress" && config.compress.permission !== "deny") {
                 const userFocus = subArgs.join(" ").trim()
-                const prompt = await handleManualTriggerCommand(commandCtx, subcommand, userFocus)
+                const prompt = await handleManualTriggerCommand(commandCtx, "compress", userFocus)
                 if (!prompt) {
                     throw new Error("__DCP_MANUAL_TRIGGER_BLOCKED__")
                 }
 
+                state.manualMode = "compress-pending"
                 state.pendingManualTrigger = {
                     sessionId: input.sessionID,
                     prompt,
@@ -226,8 +240,36 @@ export function createCommandExecuteHandler(
                 return
             }
 
+            if (subcommand === "decompress" && config.compress.permission !== "deny") {
+                await handleDecompressCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_DECOMPRESS_HANDLED__")
+            }
+
+            if (subcommand === "recompress" && config.compress.permission !== "deny") {
+                await handleRecompressCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_RECOMPRESS_HANDLED__")
+            }
+
             await handleHelpCommand(commandCtx)
             throw new Error("__DCP_HELP_HANDLED__")
         }
+    }
+}
+
+export function createTextCompleteHandler() {
+    return async (
+        _input: { sessionID: string; messageID: string; partID: string },
+        output: { text: string },
+    ) => {
+        output.text = output.text
+            .replace(TURN_NUDGE_BLOCK_REGEX, "")
+            .replace(ITERATION_NUDGE_BLOCK_REGEX, "")
+            .replace(DCP_MESSAGE_ID_TAG_REGEX, "")
     }
 }

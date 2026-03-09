@@ -6,8 +6,10 @@ import {
     findLastCompactionTimestamp,
     countTurns,
     resetOnCompaction,
+    createPruneMessagesState,
+    loadPruneMessagesState,
     loadPruneMap,
-    loadPruneOriginMap,
+    collectTurnNudgeAnchors,
 } from "./utils"
 import { getLastUserMessage } from "../shared-utils"
 
@@ -67,27 +69,30 @@ export function createSessionState(): SessionState {
         pendingManualTrigger: null,
         prune: {
             tools: new Map<string, number>(),
-            messages: new Map<string, number>(),
-            origins: new Map(),
+            messages: createPruneMessagesState(),
         },
-        compressSummaries: [],
+        nudges: {
+            contextLimitAnchors: new Set<string>(),
+            turnNudgeAnchors: new Set<string>(),
+            iterationNudgeAnchors: new Set<string>(),
+        },
         stats: {
             pruneTokenCounter: 0,
             totalPruneTokens: 0,
         },
         toolParameters: new Map<string, ToolParameterEntry>(),
+        subAgentResultCache: new Map<string, string>(),
         toolIdList: [],
         messageIds: {
             byRawId: new Map<string, string>(),
             byRef: new Map<string, string>(),
-            nextRef: 0,
+            nextRef: 1,
         },
-        nudgeCounter: 0,
-        lastToolPrune: false,
         lastCompaction: 0,
         currentTurn: 0,
         variant: undefined,
         modelContextLimit: undefined,
+        systemPromptTokens: undefined,
     }
 }
 
@@ -98,27 +103,30 @@ export function resetSessionState(state: SessionState): void {
     state.pendingManualTrigger = null
     state.prune = {
         tools: new Map<string, number>(),
-        messages: new Map<string, number>(),
-        origins: new Map(),
+        messages: createPruneMessagesState(),
     }
-    state.compressSummaries = []
+    state.nudges = {
+        contextLimitAnchors: new Set<string>(),
+        turnNudgeAnchors: new Set<string>(),
+        iterationNudgeAnchors: new Set<string>(),
+    }
     state.stats = {
         pruneTokenCounter: 0,
         totalPruneTokens: 0,
     }
     state.toolParameters.clear()
+    state.subAgentResultCache.clear()
     state.toolIdList = []
     state.messageIds = {
         byRawId: new Map<string, string>(),
         byRef: new Map<string, string>(),
-        nextRef: 0,
+        nextRef: 1,
     }
-    state.nudgeCounter = 0
-    state.lastToolPrune = false
     state.lastCompaction = 0
     state.currentTurn = 0
     state.variant = undefined
     state.modelContextLimit = undefined
+    state.systemPromptTokens = undefined
 }
 
 export async function ensureSessionInitialized(
@@ -127,7 +135,7 @@ export async function ensureSessionInitialized(
     sessionId: string,
     logger: Logger,
     messages: WithParts[],
-    manualModeDefault: boolean,
+    manualModeEnabled: boolean,
 ): Promise<void> {
     if (state.sessionId === sessionId) {
         return
@@ -137,7 +145,7 @@ export async function ensureSessionInitialized(
     // logger.info("Initializing session state", { sessionId: sessionId })
 
     resetSessionState(state)
-    state.manualMode = manualModeDefault
+    state.manualMode = manualModeEnabled ? "active" : false
     state.sessionId = sessionId
 
     const isSubAgent = await isSubAgentSession(client, sessionId)
@@ -146,16 +154,23 @@ export async function ensureSessionInitialized(
 
     state.lastCompaction = findLastCompactionTimestamp(messages)
     state.currentTurn = countTurns(state, messages)
+    state.nudges.turnNudgeAnchors = collectTurnNudgeAnchors(messages)
 
     const persisted = await loadSessionState(sessionId, logger)
     if (persisted === null) {
         return
     }
 
-    state.prune.tools = loadPruneMap(persisted.prune.tools, persisted.prune.toolIds)
-    state.prune.messages = loadPruneMap(persisted.prune.messages, persisted.prune.messageIds)
-    state.prune.origins = loadPruneOriginMap(persisted.prune.origins)
-    state.compressSummaries = persisted.compressSummaries || []
+    state.prune.tools = loadPruneMap(persisted.prune.tools)
+    state.prune.messages = loadPruneMessagesState(persisted.prune.messages)
+    state.nudges.contextLimitAnchors = new Set<string>(persisted.nudges.contextLimitAnchors || [])
+    state.nudges.turnNudgeAnchors = new Set<string>([
+        ...state.nudges.turnNudgeAnchors,
+        ...(persisted.nudges.turnNudgeAnchors || []),
+    ])
+    state.nudges.iterationNudgeAnchors = new Set<string>(
+        persisted.nudges.iterationNudgeAnchors || [],
+    )
     state.stats = {
         pruneTokenCounter: persisted.stats?.pruneTokenCounter || 0,
         totalPruneTokens: persisted.stats?.totalPruneTokens || 0,

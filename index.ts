@@ -2,11 +2,13 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { getConfig } from "./lib/config"
 import { Logger } from "./lib/logger"
 import { createSessionState } from "./lib/state"
-import { createPruneTool, createDistillTool, createCompressTool } from "./lib/strategies"
+import { createCompressTool } from "./lib/tools"
+import { PromptStore } from "./lib/prompts/store"
 import {
     createChatMessageTransformHandler,
     createCommandExecuteHandler,
     createSystemPromptHandler,
+    createTextCompleteHandler,
 } from "./lib/hooks"
 import { configureClientAuth, isSecureMode } from "./lib/auth"
 
@@ -19,6 +21,7 @@ const plugin: Plugin = (async (ctx) => {
 
     const logger = new Logger(config.debug)
     const state = createSessionState()
+    const prompts = new PromptStore(logger, ctx.directory, config.experimental.customPrompts)
 
     if (isSecureMode()) {
         configureClientAuth(ctx.client)
@@ -30,13 +33,19 @@ const plugin: Plugin = (async (ctx) => {
     })
 
     return {
-        "experimental.chat.system.transform": createSystemPromptHandler(state, logger, config),
+        "experimental.chat.system.transform": createSystemPromptHandler(
+            state,
+            logger,
+            config,
+            prompts,
+        ),
 
         "experimental.chat.messages.transform": createChatMessageTransformHandler(
             ctx.client,
             state,
             logger,
             config,
+            prompts,
         ) as any,
         "chat.message": async (
             input: {
@@ -53,6 +62,7 @@ const plugin: Plugin = (async (ctx) => {
             state.variant = input.variant
             logger.debug("Cached variant from chat.message hook", { variant: input.variant })
         },
+        "experimental.text.complete": createTextCompleteHandler(),
         "command.execute.before": createCommandExecuteHandler(
             ctx.client,
             state,
@@ -61,31 +71,14 @@ const plugin: Plugin = (async (ctx) => {
             ctx.directory,
         ),
         tool: {
-            ...(config.tools.distill.permission !== "deny" && {
-                distill: createDistillTool({
-                    client: ctx.client,
-                    state,
-                    logger,
-                    config,
-                    workingDirectory: ctx.directory,
-                }),
-            }),
-            ...(config.tools.compress.permission !== "deny" && {
+            ...(config.compress.permission !== "deny" && {
                 compress: createCompressTool({
                     client: ctx.client,
                     state,
                     logger,
                     config,
                     workingDirectory: ctx.directory,
-                }),
-            }),
-            ...(config.tools.prune.permission !== "deny" && {
-                prune: createPruneTool({
-                    client: ctx.client,
-                    state,
-                    logger,
-                    config,
-                    workingDirectory: ctx.directory,
+                    prompts,
                 }),
             }),
         },
@@ -99,9 +92,9 @@ const plugin: Plugin = (async (ctx) => {
             }
 
             const toolsToAdd: string[] = []
-            if (config.tools.distill.permission !== "deny") toolsToAdd.push("distill")
-            if (config.tools.compress.permission !== "deny") toolsToAdd.push("compress")
-            if (config.tools.prune.permission !== "deny") toolsToAdd.push("prune")
+            if (config.compress.permission !== "deny" && !config.experimental.allowSubAgents) {
+                toolsToAdd.push("compress")
+            }
 
             if (toolsToAdd.length > 0) {
                 const existingPrimaryTools = opencodeConfig.experimental?.primary_tools ?? []
@@ -109,18 +102,13 @@ const plugin: Plugin = (async (ctx) => {
                     ...opencodeConfig.experimental,
                     primary_tools: [...existingPrimaryTools, ...toolsToAdd],
                 }
-                logger.info(
-                    `Added ${toolsToAdd.map((t) => `'${t}'`).join(" and ")} to experimental.primary_tools via config mutation`,
-                )
             }
 
             // Set tool permissions from DCP config
             const permission = opencodeConfig.permission ?? {}
             opencodeConfig.permission = {
                 ...permission,
-                distill: config.tools.distill.permission,
-                compress: config.tools.compress.permission,
-                prune: config.tools.prune.permission,
+                compress: config.compress.permission,
             } as typeof permission
         },
     }
