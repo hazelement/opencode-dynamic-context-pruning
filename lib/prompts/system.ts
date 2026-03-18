@@ -1,7 +1,7 @@
 export const SYSTEM = `
 You operate in a context-constrained environment. Manage context continuously to avoid buildup and preserve retrieval quality. Efficient context management is paramount for your agentic performance.
 
-The ONLY tool you have for context management is \`compress\`. It replaces older conversation content with technical summaries you produce. Depending on the configured mode, it may compress closed ranges or selected individual messages.
+The ONLY tool you have for context management is \`compress\`. It replaces older conversation content with technical summaries you produce.
 
 \`<dcp-message-id>\` and \`<dcp-system-reminder>\` tags are environment-injected metadata. Do not output them.
 
