@@ -1,4 +1,4 @@
-import type { CompressionBlock, SessionState, WithParts } from "../state"
+import type { CompressionBlock, ProtectedContentEntry, SessionState, WithParts } from "../state"
 import { formatBlockRef, formatMessageIdTag, parseBoundaryId } from "../message-ids"
 import { isIgnoredUserMessage } from "../messages/utils"
 import { countAllMessageTokens } from "../strategies/utils"
@@ -408,7 +408,13 @@ export function validateSummaryPlaceholders(
     startReference: BoundaryReference,
     endReference: BoundaryReference,
     summaryByBlockId: Map<number, CompressionBlock>,
+    mergeMode?: "strict" | "normal",
 ): number[] {
+    if (mergeMode === "strict") {
+        placeholders.length = 0
+        return [...requiredBlockIds]
+    }
+
     const boundaryOptionalIds = new Set<number>()
     if (startReference.kind === "compressed-block") {
         if (startReference.blockId === undefined) {
@@ -451,7 +457,18 @@ export function injectBlockPlaceholders(
     summaryByBlockId: Map<number, CompressionBlock>,
     startReference: BoundaryReference,
     endReference: BoundaryReference,
+    mergeMode?: "strict" | "normal",
+    requiredBlockIds?: number[],
 ): InjectedSummaryResult {
+    if (mergeMode === "strict") {
+        // In strict mode, summary is self-contained (no placeholder expansion),
+        // but we still need to consume the in-range blocks so they get deactivated
+        return {
+            expandedSummary: summary,
+            consumedBlockIds: requiredBlockIds ? [...requiredBlockIds] : [],
+        }
+    }
+
     let cursor = 0
     let expanded = summary
     const consumed: number[] = []
@@ -532,6 +549,7 @@ export function applyCompressionState(
     blockId: number,
     summary: string,
     consumedBlockIds: number[],
+    protectedContentEntries?: ProtectedContentEntry[],
 ): AppliedCompressionResult {
     const messagesState = state.prune.messages
     const consumed = [...new Set(consumedBlockIds.filter((id) => Number.isInteger(id) && id > 0))]
@@ -593,6 +611,11 @@ export function applyCompressionState(
         effectiveToolIds: [...effectiveToolIds],
         createdAt,
         summary,
+    }
+
+    // Store protected content entries on the block for carry-forward during nested recompression
+    if (protectedContentEntries && protectedContentEntries.length > 0) {
+        block.protectedContent = protectedContentEntries
     }
 
     messagesState.blocksById.set(blockId, block)
@@ -832,8 +855,22 @@ export async function appendProtectedTools(
     searchContext: SearchContext,
     protectedTools: string[],
     protectedFilePatterns: string[] = [],
-): Promise<string> {
-    const protectedOutputs: string[] = []
+    protectedToolRetention?: number,
+    consumedBlockIds?: number[],
+): Promise<{ summary: string; protectedContentEntries: ProtectedContentEntry[] }> {
+    const collectedEntries: ProtectedToolEntry[] = []
+
+    // Collect protected content inherited from consumed blocks
+    if (consumedBlockIds && consumedBlockIds.length > 0) {
+        for (const consumedBlockId of consumedBlockIds) {
+            const consumedBlock = state.prune.messages.blocksById.get(consumedBlockId)
+            if (consumedBlock?.protectedContent) {
+                for (const entry of consumedBlock.protectedContent) {
+                    collectedEntries.push({ toolName: entry.toolName, output: entry.output })
+                }
+            }
+        }
+    }
 
     for (const messageId of range.messageIds) {
         const existingCompressionEntry = state.prune.messages.byMessageId.get(messageId)
@@ -857,7 +894,6 @@ export async function appendProtectedTools(
                 }
 
                 if (isToolProtected) {
-                    const title = `Tool: ${part.tool}`
                     let output = ""
 
                     if (part.state?.status === "completed" && part.state?.output) {
@@ -908,19 +944,37 @@ export async function appendProtectedTools(
                     }
 
                     if (output) {
-                        protectedOutputs.push(`\n### ${title}\n${output}`)
+                        collectedEntries.push({ toolName: part.tool, output })
                     }
                 }
             }
         }
     }
 
-    if (protectedOutputs.length === 0) {
-        return summary
+    // Apply retention policy to collected entries
+    const retained = applyProtectedToolRetention(collectedEntries, protectedToolRetention)
+
+    // Convert retained entries to ProtectedContentEntry for storage on the block
+    const protectedContentEntries: ProtectedContentEntry[] = retained.map((entry, index) => ({
+        toolName: entry.toolName,
+        callId: `retained-${index}`,
+        output: entry.output,
+        messageId: "",
+    }))
+
+    if (retained.length === 0) {
+        return { summary, protectedContentEntries: [] }
     }
 
+    const protectedOutputs = retained.map(
+        (entry) => `\n### Tool: ${entry.toolName}\n${entry.output}`,
+    )
+
     const heading = "\n\nThe following protected tools were used in this conversation as well:"
-    return summary + heading + protectedOutputs.join("")
+    return {
+        summary: summary + heading + protectedOutputs.join(""),
+        protectedContentEntries,
+    }
 }
 
 export function appendMissingBlockSummaries(
@@ -928,7 +982,18 @@ export function appendMissingBlockSummaries(
     missingBlockIds: number[],
     summaryByBlockId: Map<number, CompressionBlock>,
     consumedBlockIds: number[],
+    mergeMode?: "strict" | "normal",
 ): InjectedSummaryResult {
+    if (mergeMode === "strict") {
+        // In strict mode, summary is self-contained (no appending), but we still
+        // need to consume the missing blocks so they get deactivated
+        const allConsumed = [...new Set([...consumedBlockIds, ...missingBlockIds])]
+        return {
+            expandedSummary: summary,
+            consumedBlockIds: allConsumed,
+        }
+    }
+
     const consumedSeen = new Set<number>(consumedBlockIds)
     const consumed = [...consumedBlockIds]
 
@@ -964,6 +1029,55 @@ export function appendMissingBlockSummaries(
         expandedSummary: summary + heading + missingSummaries.join(""),
         consumedBlockIds: consumed,
     }
+}
+
+export interface ProtectedToolEntry {
+    toolName: string
+    output: string
+}
+
+/**
+ * Apply retention policy to protected tool outputs.
+ * Keeps at most `retention` latest outputs per tool name.
+ * If retention is undefined, keeps all. If 0, removes all.
+ * Preserves relative order from original array.
+ */
+export function applyProtectedToolRetention(
+    entries: ProtectedToolEntry[],
+    retention: number | undefined,
+): ProtectedToolEntry[] {
+    if (retention === undefined) {
+        return entries
+    }
+
+    if (retention === 0) {
+        return []
+    }
+
+    // Group by tool name, tracking original indices
+    const byTool = new Map<string, { entry: ProtectedToolEntry; index: number }[]>()
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i]
+        let group = byTool.get(entry.toolName)
+        if (!group) {
+            group = []
+            byTool.set(entry.toolName, group)
+        }
+        group.push({ entry, index: i })
+    }
+
+    // Keep latest N per tool name, preserving original order
+    const kept: { entry: ProtectedToolEntry; index: number }[] = []
+    for (const group of byTool.values()) {
+        const start = Math.max(0, group.length - retention)
+        for (let i = start; i < group.length; i++) {
+            kept.push(group[i])
+        }
+    }
+
+    // Sort by original index to preserve relative order
+    kept.sort((a, b) => a.index - b.index)
+    return kept.map((k) => k.entry)
 }
 
 function throwCombinedIssues(issues: string[]): never {

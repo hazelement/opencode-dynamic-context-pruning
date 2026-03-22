@@ -38,6 +38,11 @@ export const injectCompressNudges = (
         return
     }
 
+    // Suppress nudges during active auto-loop compression
+    if (state.autoLoopActive) {
+        return
+    }
+
     const lastMessage = findLastNonIgnoredMessage(messages)
     const lastAssistantMessage = messages.findLast((message) => message.info.role === "assistant")
 
@@ -52,7 +57,7 @@ export const injectCompressNudges = (
     const { providerId, modelId } = getModelInfo(messages)
     let anchorsChanged = false
 
-    const { overMaxLimit, overMinLimit } = isContextOverLimits(
+    const { overMaxLimit, overMinLimit, overContextTarget } = isContextOverLimits(
         config,
         state,
         providerId,
@@ -60,7 +65,7 @@ export const injectCompressNudges = (
         messages,
     )
 
-    if (!overMinLimit) {
+    if (!overMinLimit && !overContextTarget) {
         const hadTurnAnchors = state.nudges.turnNudgeAnchors.size > 0
         const hadIterationAnchors = state.nudges.iterationNudgeAnchors.size > 0
 
@@ -85,7 +90,7 @@ export const injectCompressNudges = (
                 anchorsChanged = true
             }
         }
-    } else if (overMinLimit) {
+    } else if (overMinLimit || overContextTarget) {
         const isLastMessageUser = lastMessage?.message.info.role === "user"
 
         if (isLastMessageUser && lastAssistantMessage) {

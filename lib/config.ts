@@ -3,6 +3,7 @@ import { join, dirname } from "path"
 import { homedir } from "os"
 import { parse } from "jsonc-parser"
 import type { PluginInput } from "@opencode-ai/plugin"
+import { sanitizeMaxPasses } from "./tools/compress-loop"
 
 type Permission = "ask" | "allow" | "deny"
 
@@ -24,6 +25,11 @@ export interface CompressTool {
     flatSchema: boolean
     protectedTools: string[]
     protectUserMessages: boolean
+    contextTarget: number
+    protectedToolRetention: number
+    mergeMode: "strict" | "normal"
+    autoLoop: boolean
+    maxPasses: number
 }
 
 export interface Commands {
@@ -124,6 +130,11 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.flatSchema",
     "compress.protectedTools",
     "compress.protectUserMessages",
+    "compress.contextTarget",
+    "compress.protectedToolRetention",
+    "compress.mergeMode",
+    "compress.autoLoop",
+    "compress.maxPasses",
     "strategies",
     "strategies.deduplication",
     "strategies.deduplication.enabled",
@@ -505,6 +516,74 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
                     actual: typeof compress.showCompression,
                 })
             }
+
+            if (compress.contextTarget !== undefined) {
+                if (typeof compress.contextTarget !== "number") {
+                    errors.push({
+                        key: "compress.contextTarget",
+                        expected: "number (0 to 1)",
+                        actual: typeof compress.contextTarget,
+                    })
+                } else if (compress.contextTarget <= 0 || compress.contextTarget > 1) {
+                    errors.push({
+                        key: "compress.contextTarget",
+                        expected: "number (0 to 1)",
+                        actual: `${compress.contextTarget}`,
+                    })
+                }
+            }
+
+            if (compress.protectedToolRetention !== undefined) {
+                if (typeof compress.protectedToolRetention !== "number") {
+                    errors.push({
+                        key: "compress.protectedToolRetention",
+                        expected: "number (>= 0)",
+                        actual: typeof compress.protectedToolRetention,
+                    })
+                } else if (compress.protectedToolRetention < 0) {
+                    errors.push({
+                        key: "compress.protectedToolRetention",
+                        expected: "number (>= 0)",
+                        actual: `${compress.protectedToolRetention}`,
+                    })
+                }
+            }
+
+            if (
+                compress.mergeMode !== undefined &&
+                compress.mergeMode !== "strict" &&
+                compress.mergeMode !== "normal"
+            ) {
+                errors.push({
+                    key: "compress.mergeMode",
+                    expected: '"strict" | "normal"',
+                    actual: JSON.stringify(compress.mergeMode),
+                })
+            }
+
+            if (compress.autoLoop !== undefined && typeof compress.autoLoop !== "boolean") {
+                errors.push({
+                    key: "compress.autoLoop",
+                    expected: "boolean",
+                    actual: typeof compress.autoLoop,
+                })
+            }
+
+            if (compress.maxPasses !== undefined) {
+                if (typeof compress.maxPasses !== "number") {
+                    errors.push({
+                        key: "compress.maxPasses",
+                        expected: "integer (>= 1)",
+                        actual: typeof compress.maxPasses,
+                    })
+                } else if (!Number.isInteger(compress.maxPasses) || compress.maxPasses < 1) {
+                    errors.push({
+                        key: "compress.maxPasses",
+                        expected: "integer (>= 1)",
+                        actual: `${compress.maxPasses}`,
+                    })
+                }
+            }
         }
     }
 
@@ -639,7 +718,7 @@ function showConfigWarnings(
     }, 7000)
 }
 
-const defaultConfig: PluginConfig = {
+export const defaultConfig: PluginConfig = {
     enabled: true,
     debug: false,
     pruneNotification: "detailed",
@@ -672,6 +751,11 @@ const defaultConfig: PluginConfig = {
         flatSchema: false,
         protectedTools: [...COMPRESS_DEFAULT_PROTECTED_TOOLS],
         protectUserMessages: false,
+        contextTarget: 0.4,
+        protectedToolRetention: 2,
+        mergeMode: "strict",
+        autoLoop: true,
+        maxPasses: 5,
     },
     strategies: {
         deduplication: {
@@ -842,6 +926,11 @@ function mergeCompress(
         flatSchema: override.flatSchema ?? base.flatSchema,
         protectedTools: [...new Set([...base.protectedTools, ...(override.protectedTools ?? [])])],
         protectUserMessages: override.protectUserMessages ?? base.protectUserMessages,
+        contextTarget: override.contextTarget ?? base.contextTarget,
+        protectedToolRetention: override.protectedToolRetention ?? base.protectedToolRetention,
+        mergeMode: override.mergeMode ?? base.mergeMode,
+        autoLoop: override.autoLoop ?? base.autoLoop,
+        maxPasses: sanitizeMaxPasses(override.maxPasses ?? base.maxPasses),
     }
 }
 

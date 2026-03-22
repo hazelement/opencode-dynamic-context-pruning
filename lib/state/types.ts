@@ -1,4 +1,5 @@
 import { Message, Part } from "@opencode-ai/sdk/v2"
+import type { AutoLoopState } from "../tools/compress-loop"
 
 export interface WithParts {
     info: Message
@@ -27,6 +28,13 @@ export interface PrunedMessageEntry {
     activeBlockIds: number[]
 }
 
+export interface ProtectedContentEntry {
+    toolName: string
+    callId: string
+    output: string
+    messageId: string
+}
+
 export interface CompressionBlock {
     blockId: number
     active: boolean
@@ -48,6 +56,7 @@ export interface CompressionBlock {
     deactivatedAt?: number
     deactivatedByBlockId?: number
     summary: string
+    protectedContent?: ProtectedContentEntry[]
 }
 
 export interface PruneMessagesState {
@@ -98,4 +107,6 @@ export interface SessionState {
     variant: string | undefined
     modelContextLimit: number | undefined
     systemPromptTokens: number | undefined
+    autoLoopActive: boolean
+    autoLoopState: AutoLoopState | null
 }

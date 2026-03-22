@@ -51,6 +51,9 @@ function buildConfig(): PluginConfig {
             flatSchema: false,
             protectedTools: [],
             protectUserMessages: false,
+            contextTarget: 0.4,
+            protectedToolRetention: 2,
+            mergeMode: "strict",
         },
         strategies: {
             deduplication: {

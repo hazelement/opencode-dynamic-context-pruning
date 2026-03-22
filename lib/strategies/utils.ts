@@ -147,3 +147,16 @@ export function countAllMessageTokens(msg: WithParts): number {
     if (texts.length === 0) return 0
     return estimateTokensBatch(texts)
 }
+
+/**
+ * Estimate total context window token usage by summing tokens across all messages
+ * plus system prompt tokens. This provides a local estimate that doesn't rely on
+ * stale provider metrics from the last assistant response.
+ */
+export function estimateContextTokens(messages: WithParts[], systemPromptTokens: number): number {
+    let total = systemPromptTokens
+    for (const msg of messages) {
+        total += countAllMessageTokens(msg)
+    }
+    return total
+}

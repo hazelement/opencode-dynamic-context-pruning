@@ -26,9 +26,14 @@ const COMPRESS_TRIGGER_PROMPT = [
     "Return after compress with a brief explanation of what range was compressed.",
 ].join("\n\n")
 
-function getTriggerPrompt(tool: "compress", state: SessionState, userFocus?: string): string {
+function getTriggerPrompt(
+    tool: "compress",
+    state: SessionState,
+    config: PluginConfig,
+    userFocus?: string,
+): string {
     const base = COMPRESS_TRIGGER_PROMPT
-    const compressedBlockGuidance = buildCompressedBlockGuidance(state)
+    const compressedBlockGuidance = buildCompressedBlockGuidance(state, config.compress.mergeMode)
 
     const sections = [base, compressedBlockGuidance]
     if (userFocus && userFocus.trim().length > 0) {
@@ -78,5 +83,5 @@ export async function handleManualTriggerCommand(
     tool: "compress",
     userFocus?: string,
 ): Promise<string | null> {
-    return getTriggerPrompt(tool, ctx.state, userFocus)
+    return getTriggerPrompt(tool, ctx.state, ctx.config, userFocus)
 }

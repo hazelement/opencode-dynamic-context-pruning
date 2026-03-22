@@ -4,7 +4,8 @@ import type { RuntimePrompts } from "../../prompts/store"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { createSyntheticTextPart, isIgnoredUserMessage } from "../utils"
 import { getLastUserMessage } from "../../shared-utils"
-import { getCurrentTokenUsage } from "../../strategies/utils"
+import { getCurrentTokenUsage, estimateContextTokens } from "../../strategies/utils"
+import { calculateTargetTokens } from "../../tools/compress-loop"
 
 export interface LastUserModelContext {
     providerId: string | undefined
@@ -133,9 +134,29 @@ export function isContextOverLimits(
     const overMaxLimit = maxContextLimit === undefined ? false : currentTokens > maxContextLimit
     const overMinLimit = minContextLimit === undefined ? true : currentTokens >= minContextLimit
 
+    // Local estimation using contextTarget: if model context limit and contextTarget
+    // are configured, check whether the locally-estimated token count exceeds the
+    // target. This ensures the target drives nudge decisions even when stale provider
+    // metrics report lower values.
+    let overContextTarget = false
+    const contextTarget = config.compress.contextTarget
+    if (
+        contextTarget !== undefined &&
+        contextTarget > 0 &&
+        contextTarget < 1 &&
+        state.modelContextLimit !== undefined &&
+        state.modelContextLimit > 0
+    ) {
+        const targetTokens = calculateTargetTokens(state.modelContextLimit, contextTarget)
+        const systemTokens = state.systemPromptTokens ?? 0
+        const estimatedTokens = estimateContextTokens(messages, systemTokens)
+        overContextTarget = estimatedTokens > targetTokens
+    }
+
     return {
         overMaxLimit,
         overMinLimit,
+        overContextTarget,
     }
 }
 
@@ -169,7 +190,10 @@ export function addAnchor(
     return anchorMessageIds.size !== previousSize
 }
 
-export function buildCompressedBlockGuidance(state: SessionState): string {
+export function buildCompressedBlockGuidance(
+    state: SessionState,
+    mergeMode?: "strict" | "normal",
+): string {
     const refs = Array.from(state.prune.messages.activeBlockIds)
         .filter((id) => Number.isInteger(id) && id > 0)
         .sort((a, b) => a - b)
@@ -177,11 +201,22 @@ export function buildCompressedBlockGuidance(state: SessionState): string {
     const blockCount = refs.length
     const blockList = blockCount > 0 ? refs.join(", ") : "none"
 
-    return [
+    const lines = [
         "Compressed block context:",
         `- Active compressed blocks in this session: ${blockCount} (${blockList})`,
-        "- If your selected compression range includes any listed block, include each required placeholder exactly once in the summary using \`(bN)\`.",
-    ].join("\n")
+    ]
+
+    if (mergeMode === "strict") {
+        lines.push(
+            "- Blocks are merged inline during compression. Do NOT use `(bN)` placeholders in summaries.",
+        )
+    } else {
+        lines.push(
+            "- If your selected compression range includes any listed block, include each required placeholder exactly once in the summary using `(bN)`.",
+        )
+    }
+
+    return lines.join("\n")
 }
 
 function appendGuidanceToDcpTag(hintText: string, guidance: string): string {
@@ -238,7 +273,8 @@ export function applyAnchoredNudges(
     messages: WithParts[],
     prompts: RuntimePrompts,
 ): void {
-    const compressedBlockGuidance = buildCompressedBlockGuidance(state)
+    const mergeMode = config.compress.mergeMode
+    const compressedBlockGuidance = buildCompressedBlockGuidance(state, mergeMode)
 
     const contextLimitNudge = appendGuidanceToDcpTag(
         prompts.contextLimitNudge,

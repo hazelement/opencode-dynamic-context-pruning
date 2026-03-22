@@ -230,6 +230,17 @@
                     "type": "boolean",
                     "default": false,
                     "description": "When enabled, your messages are never lost during compression"
+                },
+                "autoLoop": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When enabled, compression automatically iterates until the context target is reached or a stop condition is met"
+                },
+                "maxPasses": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 5,
+                    "description": "Maximum number of compression passes in a single auto-loop invocation"
                 }
             }
         },
