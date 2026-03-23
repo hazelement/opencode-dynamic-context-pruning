@@ -16,7 +16,8 @@
         "test": "node --import tsx --test tests/*.test.ts",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "dcp": "tsx scripts/print.ts"
+        "dcp": "tsx scripts/print.ts",
+        "release:installable": "bash scripts/release-installable.sh"
     },
     "keywords": [
         "opencode",

@@ -9,6 +9,8 @@ Automatically reduces token usage in OpenCode by managing conversation context.
 
 ## Installation
 
+### From npm (upstream)
+
 Add to your OpenCode config:
 
 ```jsonc
@@ -19,6 +21,30 @@ Add to your OpenCode config:
 ```
 
 Using `@latest` ensures you always get the newest version automatically when OpenCode starts.
+
+### From Git (this fork)
+
+To install this fork (e.g. with custom modifications), point at the `installable` branch which includes pre-built `dist/`:
+
+```jsonc
+// opencode.jsonc
+{
+    "plugin": [
+        "@haze/opencode-dcp@git+https://github.com/hazelement/opencode-dynamic-context-pruning.git#installable",
+    ],
+}
+```
+
+The `installable` branch is automatically updated by CI on every push to `master`. You can also update it manually:
+
+```bash
+npm run release:installable          # build + push installable branch
+npm run release:installable -- --no-push   # build locally, don't push
+npm run release:installable -- --dry-run   # preview without changes
+```
+
+> [!NOTE]
+> The `installable` branch is force-pushed on each update. Don't commit directly to it.
 
 Restart OpenCode. The plugin will automatically start optimizing your sessions.
 
