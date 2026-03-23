@@ -9,6 +9,7 @@
     "scripts": {
         "clean": "rm -rf dist",
         "build": "npm run clean && tsc",
+        "prepare": "tsc",
         "prepublishOnly": "npm run build",
         "dev": "opencode plugin dev",
         "typecheck": "tsc --noEmit",
