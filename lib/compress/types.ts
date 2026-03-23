@@ -8,7 +8,6 @@ export interface ToolContext {
     state: SessionState
     logger: Logger
     config: PluginConfig
-    workingDirectory: string
     prompts: PromptStore
 }
 
@@ -103,8 +102,4 @@ export interface CompressionStateInput {
     mode: CompressionMode
     runId: number
     compressMessageId: string
-}
-
-export interface CompressionDependencies {
-    state: SessionState
 }

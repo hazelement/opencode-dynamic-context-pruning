@@ -46,7 +46,6 @@ const plugin: Plugin = (async (ctx) => {
         state,
         logger,
         config,
-        workingDirectory: ctx.directory,
         prompts,
     }
 
