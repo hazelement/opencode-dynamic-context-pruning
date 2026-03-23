@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /tmp/dcp-test)",
+      "Read(//tmp/**)",
+      "Bash(rm -rf node_modules package*)",
+      "Bash(npm install:*)",
+      "Read(//private/tmp/dcp-test/**)",
+      "Bash(rm -rf node_modules)",
+      "Bash(bun add:*)",
+      "mcp__memory__recall_memory",
+      "WebSearch",
+      "WebFetch(domain:opencode.ai)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}

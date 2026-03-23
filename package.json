@@ -29,7 +29,7 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/Tarquinen/opencode-dynamic-context-pruning.git"
+        "url": "git+https://github.com/hazelement/opencode-dynamic-context-pruning.git"
     },
     "bugs": {
         "url": "https://github.com/Tarquinen/opencode-dynamic-context-pruning/issues"
