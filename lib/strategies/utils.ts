@@ -4,25 +4,34 @@ import { Logger } from "../logger"
 import { countTokens as anthropicCountTokens } from "@anthropic-ai/tokenizer"
 import { getLastUserMessage } from "../shared-utils"
 
-/**
- * Get current token usage from the last assistant message.
- * Returns total tokens (input + output + reasoning + cache).
- */
-export function getCurrentTokenUsage(messages: WithParts[]): number {
+export function getCurrentTokenUsage(state: SessionState, messages: WithParts[]): number {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i]
-        if (msg.info.role === "assistant") {
-            const assistantInfo = msg.info as AssistantMessage
-            if (assistantInfo.tokens?.output > 0) {
-                const input = assistantInfo.tokens?.input || 0
-                const output = assistantInfo.tokens?.output || 0
-                const reasoning = assistantInfo.tokens?.reasoning || 0
-                const cacheRead = assistantInfo.tokens?.cache?.read || 0
-                const cacheWrite = assistantInfo.tokens?.cache?.write || 0
-                return input + output + reasoning + cacheRead + cacheWrite
-            }
+        if (msg.info.role !== "assistant") {
+            continue
         }
+
+        const assistantInfo = msg.info as AssistantMessage
+        if ((assistantInfo.tokens?.output || 0) <= 0) {
+            continue
+        }
+
+        if (
+            state.lastCompaction > 0 &&
+            (msg.info.time.created < state.lastCompaction ||
+                (msg.info.summary === true && msg.info.time.created === state.lastCompaction))
+        ) {
+            return 0
+        }
+
+        const input = assistantInfo.tokens?.input || 0
+        const output = assistantInfo.tokens?.output || 0
+        const reasoning = assistantInfo.tokens?.reasoning || 0
+        const cacheRead = assistantInfo.tokens?.cache?.read || 0
+        const cacheWrite = assistantInfo.tokens?.cache?.write || 0
+        return input + output + reasoning + cacheRead + cacheWrite
     }
+
     return 0
 }
 

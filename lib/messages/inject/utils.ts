@@ -136,7 +136,7 @@ export function isContextOverLimits(
 ) {
     const maxContextLimit = resolveContextTokenLimit(config, state, providerId, modelId, "max")
     const minContextLimit = resolveContextTokenLimit(config, state, providerId, modelId, "min")
-    const currentTokens = getCurrentTokenUsage(messages)
+    const currentTokens = getCurrentTokenUsage(state, messages)
 
     const overMaxLimit = maxContextLimit === undefined ? false : currentTokens > maxContextLimit
     const overMinLimit = minContextLimit === undefined ? true : currentTokens >= minContextLimit

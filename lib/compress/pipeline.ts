@@ -86,7 +86,7 @@ export async function finalizeSession(
     await saveSessionState(ctx.state, ctx.logger)
 
     const params = getCurrentParams(ctx.state, rawMessages, ctx.logger)
-    const totalSessionTokens = getCurrentTokenUsage(rawMessages)
+    const totalSessionTokens = getCurrentTokenUsage(ctx.state, rawMessages)
     const sessionMessageIds = rawMessages
         .filter((msg) => !(msg.info.role === "user" && isIgnoredUserMessage(msg)))
         .map((msg) => msg.info.id)
