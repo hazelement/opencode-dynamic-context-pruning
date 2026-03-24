@@ -142,6 +142,10 @@ export function buildToolIdList(state: SessionState, messages: WithParts[]): str
 }
 
 export const isIgnoredUserMessage = (message: WithParts): boolean => {
+    if (message.info.role !== "user") {
+        return false
+    }
+
     const parts = Array.isArray(message.parts) ? message.parts : []
     if (parts.length === 0) {
         return true

@@ -28,7 +28,7 @@ export function buildPriorityMap(
     const priorities: CompressionPriorityMap = new Map()
 
     for (const message of messages) {
-        if (message.info.role === "user" && isIgnoredUserMessage(message)) {
+        if (isIgnoredUserMessage(message)) {
             continue
         }
 

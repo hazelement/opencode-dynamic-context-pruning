@@ -88,7 +88,7 @@ export async function finalizeSession(
     const params = getCurrentParams(ctx.state, rawMessages, ctx.logger)
     const totalSessionTokens = getCurrentTokenUsage(ctx.state, rawMessages)
     const sessionMessageIds = rawMessages
-        .filter((msg) => !(msg.info.role === "user" && isIgnoredUserMessage(msg)))
+        .filter((msg) => !isIgnoredUserMessage(msg))
         .map((msg) => msg.info.id)
 
     await sendCompressNotification(

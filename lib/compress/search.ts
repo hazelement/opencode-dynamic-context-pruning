@@ -126,7 +126,7 @@ export function resolveSelection(
         if (!rawMessage) {
             continue
         }
-        if (rawMessage.info.role === "user" && isIgnoredUserMessage(rawMessage)) {
+        if (isIgnoredUserMessage(rawMessage)) {
             continue
         }
 
@@ -221,7 +221,7 @@ function buildBoundaryLookup(
         if (!rawMessage) {
             continue
         }
-        if (rawMessage.info.role === "user" && isIgnoredUserMessage(rawMessage)) {
+        if (isIgnoredUserMessage(rawMessage)) {
             continue
         }
 
@@ -244,7 +244,7 @@ function buildBoundaryLookup(
         if (!anchorMessage) {
             continue
         }
-        if (anchorMessage.info.role === "user" && isIgnoredUserMessage(anchorMessage)) {
+        if (isIgnoredUserMessage(anchorMessage)) {
             continue
         }
 

@@ -147,7 +147,7 @@ export const injectMessageIds = (
     }
 
     for (const message of messages) {
-        if (message.info.role === "user" && isIgnoredUserMessage(message)) {
+        if (isIgnoredUserMessage(message)) {
             continue
         }
 

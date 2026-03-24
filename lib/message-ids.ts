@@ -121,7 +121,7 @@ export function assignMessageRefs(state: SessionState, messages: WithParts[]): n
     let skippedSubAgentPrompt = false
 
     for (const message of messages) {
-        if (message.info.role === "user" && isIgnoredUserMessage(message)) {
+        if (isIgnoredUserMessage(message)) {
             continue
         }
 

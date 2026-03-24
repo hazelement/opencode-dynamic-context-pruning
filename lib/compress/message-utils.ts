@@ -142,7 +142,7 @@ function resolveMessage(
         !!rawMessage &&
         !!messageId &&
         searchContext.rawIndexById.has(messageId) &&
-        !(rawMessage.info.role === "user" && isIgnoredUserMessage(rawMessage))
+        !isIgnoredUserMessage(rawMessage)
     if (!hasBoundary) {
         throw new SoftIssue(
             `messageId ${parsed.ref} is not available in the current conversation context. Choose an injected mNNNN ID visible in context.`,

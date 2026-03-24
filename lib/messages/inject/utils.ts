@@ -35,7 +35,7 @@ export function getIterationNudgeThreshold(config: PluginConfig): number {
 export function findLastNonIgnoredMessage(messages: WithParts[]): LastNonIgnoredMessage | null {
     for (let i = messages.length - 1; i >= 0; i--) {
         const message = messages[i]
-        if (message.info.role === "user" && isIgnoredUserMessage(message)) {
+        if (isIgnoredUserMessage(message)) {
             continue
         }
         return { message, index: i }
@@ -49,7 +49,7 @@ export function countMessagesAfterIndex(messages: WithParts[], index: number): n
 
     for (let i = index + 1; i < messages.length; i++) {
         const message = messages[i]
-        if (message.info.role === "user" && isIgnoredUserMessage(message)) {
+        if (isIgnoredUserMessage(message)) {
             continue
         }
         count++
