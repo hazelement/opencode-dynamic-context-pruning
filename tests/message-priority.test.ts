@@ -212,8 +212,14 @@ test("injectMessageIds injects ID once into last tool output for assistant messa
     assert.equal(assistantTextTwo?.type, "text")
     assert.equal(assistantToolTwo?.type, "tool")
     // User messages: still injected into all text parts
-    assert.match((userTextOne as any).text, /\n\nm0001<\/dcp-message-id>/)
-    assert.match((userTextTwo as any).text, /\n\nm0001<\/dcp-message-id>/)
+    assert.match(
+        (userTextOne as any).text,
+        /\n\n<dcp-message-id priority="high">m0001<\/dcp-message-id>/,
+    )
+    assert.match(
+        (userTextTwo as any).text,
+        /\n\n<dcp-message-id priority="high">m0001<\/dcp-message-id>/,
+    )
     // Assistant messages: ID injected only once into the last tool output
     assert.doesNotMatch((assistantTextOne as any).text, /dcp-message-id/)
     assert.doesNotMatch((assistantToolOne as any).state.output, /dcp-message-id/)
