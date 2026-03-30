@@ -15,6 +15,7 @@ import {
     syncCompressionBlocks,
 } from "./messages"
 import { renderSystemPrompt, type PromptStore } from "./prompts"
+import { buildProtectedToolsExtension } from "./prompts/extensions/system"
 import {
     applyPendingManualTrigger,
     handleContextCommand,
@@ -75,6 +76,7 @@ export function createSystemPromptHandler(
         const runtimePrompts = prompts.getRuntimePrompts()
         const newPrompt = renderSystemPrompt(
             runtimePrompts,
+            buildProtectedToolsExtension(config.compress.protectedTools),
             !!state.manualMode,
             state.isSubAgent && config.experimental.allowSubAgents,
         )

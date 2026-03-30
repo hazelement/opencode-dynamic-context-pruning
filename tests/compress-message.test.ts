@@ -140,7 +140,7 @@ function buildMessages(sessionID: string): WithParts[] {
     ]
 }
 
-test("compress message tool appends non-editable format overlay", () => {
+test("compress message tool appends non-editable format extension", () => {
     const tool = createCompressMessageTool({
         client: {},
         state: createSessionState(),

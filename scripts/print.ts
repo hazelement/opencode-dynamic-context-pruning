@@ -39,10 +39,10 @@ Usage:
 Options:
   --list                   List available prompt keys
   --show <key>             Print effective prompt text for key
-  --system                 Print effective system prompt with no overlays
-  --system-manual          Print system prompt with manual overlay
-  --system-subagent        Print system prompt with subagent overlay
-  --system-all             Print system prompt with both overlays
+  --system                 Print effective system prompt with no extensions
+  --system-manual          Print system prompt with manual extension
+  --system-subagent        Print system prompt with subagent extension
+  --system-all             Print system prompt with both extensions
 
 Prompt keys:
   system, compress-range, compress-message,
@@ -88,18 +88,18 @@ if (showIndex >= 0) {
 }
 
 if (args.includes("--system-all")) {
-    console.log(renderSystemPrompt(runtimePrompts, true, true))
+    console.log(renderSystemPrompt(runtimePrompts, undefined, true, true))
     process.exit(0)
 }
 
 if (args.includes("--system-manual")) {
-    console.log(renderSystemPrompt(runtimePrompts, true, false))
+    console.log(renderSystemPrompt(runtimePrompts, undefined, true))
     process.exit(0)
 }
 
 if (args.includes("--system-subagent")) {
-    console.log(renderSystemPrompt(runtimePrompts, false, true))
+    console.log(renderSystemPrompt(runtimePrompts, undefined, false, true))
     process.exit(0)
 }
 
-console.log(renderSystemPrompt(runtimePrompts, false, false))
+console.log(renderSystemPrompt(runtimePrompts))

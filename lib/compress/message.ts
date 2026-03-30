@@ -1,7 +1,7 @@
 import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./types"
 import { countTokens } from "../token-utils"
-import { MESSAGE_FORMAT_OVERLAY } from "../prompts/internal-overlays"
+import { MESSAGE_FORMAT_EXTENSION } from "../prompts/extensions/tool"
 import { formatIssues, formatResult, resolveMessages, validateArgs } from "./message-utils"
 import { finalizeSession, prepareSession, type NotificationEntry } from "./pipeline"
 import { appendProtectedTools } from "./protected-content"
@@ -43,7 +43,7 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
     const runtimePrompts = ctx.prompts.getRuntimePrompts()
 
     return tool({
-        description: runtimePrompts.compressMessage + MESSAGE_FORMAT_OVERLAY,
+        description: runtimePrompts.compressMessage + MESSAGE_FORMAT_EXTENSION,
         args: buildSchema(),
         async execute(args, toolCtx) {
             const input = args as CompressMessageToolArgs

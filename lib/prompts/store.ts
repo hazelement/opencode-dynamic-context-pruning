@@ -8,7 +8,7 @@ import { COMPRESS_MESSAGE as COMPRESS_MESSAGE_PROMPT } from "./compress-message"
 import { CONTEXT_LIMIT_NUDGE } from "./context-limit-nudge"
 import { TURN_NUDGE } from "./turn-nudge"
 import { ITERATION_NUDGE } from "./iteration-nudge"
-import { MANUAL_MODE_SYSTEM_OVERLAY, SUBAGENT_SYSTEM_OVERLAY } from "./internal-overlays"
+import { MANUAL_MODE_SYSTEM_EXTENSION, SUBAGENT_SYSTEM_EXTENSION } from "./extensions/system"
 
 export type PromptKey =
     | "system"
@@ -53,8 +53,8 @@ export interface RuntimePrompts {
     contextLimitNudge: string
     turnNudge: string
     iterationNudge: string
-    manualOverlay: string
-    subagentOverlay: string
+    manualExtension: string
+    subagentExtension: string
 }
 
 const PROMPT_DEFINITIONS: PromptDefinition[] = [
@@ -132,9 +132,9 @@ const BUNDLED_EDITABLE_PROMPTS: Record<EditablePromptField, string> = {
     iterationNudge: ITERATION_NUDGE,
 }
 
-const INTERNAL_PROMPT_OVERLAYS = {
-    manualOverlay: MANUAL_MODE_SYSTEM_OVERLAY,
-    subagentOverlay: SUBAGENT_SYSTEM_OVERLAY,
+const INTERNAL_PROMPT_EXTENSIONS = {
+    manualExtension: MANUAL_MODE_SYSTEM_EXTENSION,
+    subagentExtension: SUBAGENT_SYSTEM_EXTENSION,
 }
 
 function createBundledRuntimePrompts(): RuntimePrompts {
@@ -145,8 +145,8 @@ function createBundledRuntimePrompts(): RuntimePrompts {
         contextLimitNudge: BUNDLED_EDITABLE_PROMPTS.contextLimitNudge,
         turnNudge: BUNDLED_EDITABLE_PROMPTS.turnNudge,
         iterationNudge: BUNDLED_EDITABLE_PROMPTS.iterationNudge,
-        manualOverlay: INTERNAL_PROMPT_OVERLAYS.manualOverlay,
-        subagentOverlay: INTERNAL_PROMPT_OVERLAYS.subagentOverlay,
+        manualExtension: INTERNAL_PROMPT_EXTENSIONS.manualExtension,
+        subagentExtension: INTERNAL_PROMPT_EXTENSIONS.subagentExtension,
     }
 }
 

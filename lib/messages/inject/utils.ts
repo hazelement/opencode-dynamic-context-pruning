@@ -1,6 +1,10 @@
 import type { SessionState, WithParts } from "../../state"
 import type { PluginConfig } from "../../config"
-import { renderMessagePriorityGuidance } from "../../prompts/message-priority-guidance"
+import {
+    appendGuidanceToDcpTag,
+    buildCompressedBlockGuidance,
+    renderMessagePriorityGuidance,
+} from "../../prompts/extensions/nudge"
 import type { RuntimePrompts } from "../../prompts/store"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import {
@@ -186,38 +190,6 @@ export function addAnchor(
     const previousSize = anchorMessageIds.size
     anchorMessageIds.add(anchorMessageId)
     return anchorMessageIds.size !== previousSize
-}
-
-export function buildCompressedBlockGuidance(state: SessionState): string {
-    const refs = Array.from(state.prune.messages.activeBlockIds)
-        .filter((id) => Number.isInteger(id) && id > 0)
-        .sort((a, b) => a - b)
-        .map((id) => `b${id}`)
-    const blockCount = refs.length
-    const blockList = blockCount > 0 ? refs.join(", ") : "none"
-
-    return [
-        "Compressed block context:",
-        `- Active compressed blocks in this session: ${blockCount} (${blockList})`,
-        "- If your selected compression range includes any listed block, include each required placeholder exactly once in the summary using \`(bN)\`.",
-    ].join("\n")
-}
-
-function appendGuidanceToDcpTag(nudgeText: string, guidance: string): string {
-    if (!guidance.trim()) {
-        return nudgeText
-    }
-
-    const closeTag = "</dcp-system-reminder>"
-    const closeTagIndex = nudgeText.lastIndexOf(closeTag)
-
-    if (closeTagIndex === -1) {
-        return nudgeText
-    }
-
-    const beforeClose = nudgeText.slice(0, closeTagIndex).trimEnd()
-    const afterClose = nudgeText.slice(closeTagIndex)
-    return `${beforeClose}\n\n${guidance}\n${afterClose}`
 }
 
 function buildMessagePriorityGuidance(

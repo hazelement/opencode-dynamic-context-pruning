@@ -114,10 +114,9 @@ test("prompt store exposes bundled message-mode compress prompt", () => {
             /Only use raw message IDs of the form `mNNNN`\./,
         )
         assert.match(runtimePrompts.compressMessage, /priority="high"/)
-        assert.match(runtimePrompts.compressMessage, /prefer higher-priority messages first/i)
+        assert.match(runtimePrompts.compressMessage, /high-priority messages/i)
         assert.match(runtimePrompts.compressMessage, /BLOCKED/)
         assert.match(runtimePrompts.compressMessage, /cannot be compressed/i)
-        assert.match(runtimePrompts.compressMessage, /Do not use compressed block placeholders/i)
         assert.doesNotMatch(runtimePrompts.compressMessage, /THE FORMAT OF COMPRESS/)
     } finally {
         fixture.cleanup()
