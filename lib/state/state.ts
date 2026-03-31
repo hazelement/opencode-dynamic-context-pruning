@@ -1,6 +1,6 @@
 import type { SessionState, ToolParameterEntry, WithParts } from "./types"
 import type { Logger } from "../logger"
-import { attachCompressionDuration } from "../compress/state"
+import { applyPendingCompressionDurations, createCompressionTimingState } from "../compress/timing"
 import { loadSessionState, saveSessionState } from "./persistence"
 import {
     isSubAgentSession,
@@ -82,10 +82,7 @@ export function createSessionState(): SessionState {
             pruneTokenCounter: 0,
             totalPruneTokens: 0,
         },
-        compressionTiming: {
-            startsByCallId: new Map(),
-            pendingBySessionId: new Map(),
-        },
+        compressionTiming: createCompressionTimingState(),
         toolParameters: new Map<string, ToolParameterEntry>(),
         subAgentResultCache: new Map<string, string>(),
         toolIdList: [],
@@ -187,48 +184,4 @@ export async function ensureSessionInitialized(
     if (applied > 0) {
         await saveSessionState(state, logger)
     }
-}
-
-export function queueCompressionDuration(
-    state: SessionState,
-    sessionId: string,
-    callId: string,
-    messageId: string,
-    durationMs: number,
-): void {
-    const queued = state.compressionTiming.pendingBySessionId.get(sessionId) || []
-    const filtered = queued.filter((entry) => entry.callId !== callId)
-    filtered.push({ callId, messageId, durationMs })
-    state.compressionTiming.pendingBySessionId.set(sessionId, filtered)
-}
-
-export function applyPendingCompressionDurations(state: SessionState, sessionId: string): number {
-    const queued = state.compressionTiming.pendingBySessionId.get(sessionId)
-    if (!queued || queued.length === 0) {
-        return 0
-    }
-
-    let updates = 0
-    const remaining = []
-    for (const entry of queued) {
-        const applied = attachCompressionDuration(
-            state.prune.messages,
-            entry.callId,
-            entry.messageId,
-            entry.durationMs,
-        )
-        if (applied > 0) {
-            updates += applied
-            continue
-        }
-        remaining.push(entry)
-    }
-
-    if (remaining.length > 0) {
-        state.compressionTiming.pendingBySessionId.set(sessionId, remaining)
-    } else {
-        state.compressionTiming.pendingBySessionId.delete(sessionId)
-    }
-
-    return updates
 }

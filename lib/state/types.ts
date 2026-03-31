@@ -1,3 +1,4 @@
+import type { CompressionTimingState } from "../compress/timing"
 import { Message, Part } from "@opencode-ai/sdk/v2"
 
 export interface WithParts {
@@ -19,23 +20,6 @@ export interface ToolParameterEntry {
 export interface SessionStats {
     pruneTokenCounter: number
     totalPruneTokens: number
-}
-
-export interface CompressionStart {
-    sessionId: string
-    messageId: string
-    startedAt: number
-}
-
-export interface PendingCompressionDuration {
-    callId: string
-    messageId: string
-    durationMs: number
-}
-
-export interface CompressionTimingState {
-    startsByCallId: Map<string, CompressionStart>
-    pendingBySessionId: Map<string, PendingCompressionDuration[]>
 }
 
 export interface PrunedMessageEntry {

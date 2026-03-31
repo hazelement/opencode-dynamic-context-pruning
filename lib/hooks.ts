@@ -17,6 +17,14 @@ import {
 import { renderSystemPrompt, type PromptStore } from "./prompts"
 import { buildProtectedToolsExtension } from "./prompts/extensions/system"
 import {
+    applyPendingCompressionDurations,
+    clearCompressionStart,
+    consumeCompressionStart,
+    queueCompressionDuration,
+    recordCompressionStart,
+    resolveCompressionDuration,
+} from "./compress/timing"
+import {
     applyPendingManualTrigger,
     handleContextCommand,
     handleDecompressCommand,
@@ -29,14 +37,7 @@ import {
 } from "./commands"
 import { type HostPermissionSnapshot } from "./host-permissions"
 import { compressPermission, syncCompressPermissionState } from "./compress-permission"
-import {
-    checkSession,
-    ensureSessionInitialized,
-    applyPendingCompressionDurations,
-    queueCompressionDuration,
-    saveSessionState,
-    syncToolCache,
-} from "./state"
+import { checkSession, ensureSessionInitialized, saveSessionState, syncToolCache } from "./state"
 import { cacheSystemPromptTokens } from "./ui/utils"
 
 const INTERNAL_AGENT_SIGNATURES = [
@@ -307,16 +308,18 @@ export function createEventHandler(state: SessionState, logger: Logger) {
                 return
             }
 
-            if (state.compressionTiming.startsByCallId.has(part.callID)) {
+            const startedAt = eventTime ?? Date.now()
+            if (
+                !recordCompressionStart(
+                    state,
+                    part.callID,
+                    eventSessionId,
+                    part.messageID,
+                    startedAt,
+                )
+            ) {
                 return
             }
-
-            const startedAt = eventTime ?? Date.now()
-            state.compressionTiming.startsByCallId.set(part.callID, {
-                sessionId: eventSessionId,
-                messageId: part.messageID,
-                startedAt,
-            })
             logger.debug("Recorded compression start", {
                 sessionID: eventSessionId,
                 callID: part.callID,
@@ -335,30 +338,8 @@ export function createEventHandler(state: SessionState, logger: Logger) {
                 return
             }
 
-            const start = state.compressionTiming.startsByCallId.get(part.callID)
-            state.compressionTiming.startsByCallId.delete(part.callID)
-
-            const runningAt =
-                typeof part.state.time?.start === "number" && Number.isFinite(part.state.time.start)
-                    ? part.state.time.start
-                    : eventTime
-            const pendingToRunningMs =
-                start && typeof runningAt === "number"
-                    ? Math.max(0, runningAt - start.startedAt)
-                    : undefined
-
-            const toolStart = part.state.time?.start
-            const toolEnd = part.state.time?.end
-            const runtimeMs =
-                typeof toolStart === "number" &&
-                Number.isFinite(toolStart) &&
-                typeof toolEnd === "number" &&
-                Number.isFinite(toolEnd)
-                    ? Math.max(0, toolEnd - toolStart)
-                    : undefined
-
-            const durationMs =
-                typeof pendingToRunningMs === "number" ? pendingToRunningMs : runtimeMs
+            const start = consumeCompressionStart(state, part.callID)
+            const durationMs = resolveCompressionDuration(start, eventTime, part.state.time)
             if (typeof durationMs !== "number") {
                 return
             }
@@ -390,7 +371,7 @@ export function createEventHandler(state: SessionState, logger: Logger) {
         }
 
         if (typeof part.callID === "string") {
-            state.compressionTiming.startsByCallId.delete(part.callID)
+            clearCompressionStart(state, part.callID)
         }
     }
 }
