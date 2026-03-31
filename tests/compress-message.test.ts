@@ -532,6 +532,78 @@ test("compress message mode sends one aggregated notification for batched messag
     assert.match(toastCalls[0] || "", /Items: 2 messages/)
 })
 
+test("compress message mode skips messages that are already actively compressed", async () => {
+    const sessionID = `ses_message_compress_reuse_${Date.now()}`
+    const rawMessages = buildMessages(sessionID)
+    const state = createSessionState()
+    const logger = new Logger(false)
+    const tool = createCompressMessageTool({
+        client: {
+            session: {
+                messages: async () => ({ data: rawMessages }),
+                get: async () => ({ data: { parentID: null } }),
+            },
+        },
+        state,
+        logger,
+        config: buildConfig(),
+        prompts: {
+            reload() {},
+            getRuntimePrompts() {
+                return { compressMessage: "", compressRange: "" }
+            },
+        },
+    } as any)
+
+    await tool.execute(
+        {
+            topic: "First pass",
+            content: [
+                {
+                    messageId: "m0002",
+                    topic: "Code path note",
+                    summary: "Captured the assistant's code-path findings.",
+                },
+            ],
+        },
+        {
+            ask: async () => {},
+            metadata: () => {},
+            sessionID,
+            messageID: "msg-compress-message-first-pass",
+        },
+    )
+
+    const result = await tool.execute(
+        {
+            topic: "Second pass",
+            content: [
+                {
+                    messageId: "m0002",
+                    topic: "Already compressed note",
+                    summary: "Should be skipped because it is already compressed.",
+                },
+                {
+                    messageId: "m0003",
+                    topic: "Task output note",
+                    summary: "Captured the assistant's task-backed follow-up.",
+                },
+            ],
+        },
+        {
+            ask: async () => {},
+            metadata: () => {},
+            sessionID,
+            messageID: "msg-compress-message-second-pass",
+        },
+    )
+
+    assert.equal(state.prune.messages.blocksById.size, 2)
+    assert.match(result, /^Compressed 1 message into \[Compressed conversation section\]\./)
+    assert.match(result, /Skipped 1 issue:/)
+    assert.match(result, /messageId m0002 is already part of an active compression\./)
+})
+
 test("compress message mode skips invalid batch entries and reports issues", async () => {
     const sessionID = `ses_message_compress_partial_${Date.now()}`
     const rawMessages = buildMessages(sessionID)

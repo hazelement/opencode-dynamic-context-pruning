@@ -73,6 +73,7 @@ export interface ResolvedRangeCompression {
 export interface ResolvedMessageCompressionsResult {
     plans: ResolvedMessageCompression[]
     skippedIssues: string[]
+    skippedCount: number
 }
 
 export interface ParsedBlockPlaceholder {

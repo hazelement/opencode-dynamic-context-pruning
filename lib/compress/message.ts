@@ -54,15 +54,15 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
                 toolCtx,
                 `Compress Message: ${input.topic}`,
             )
-            const { plans, skippedIssues } = resolveMessages(
+            const { plans, skippedIssues, skippedCount } = resolveMessages(
                 input,
                 searchContext,
                 ctx.state,
                 ctx.config,
             )
 
-            if (plans.length === 0 && skippedIssues.length > 0) {
-                throw new Error(formatIssues(skippedIssues))
+            if (plans.length === 0 && skippedCount > 0) {
+                throw new Error(formatIssues(skippedIssues, skippedCount))
             }
 
             const notifications: NotificationEntry[] = []
@@ -126,7 +126,7 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
 
             await finalizeSession(ctx, toolCtx, rawMessages, notifications, input.topic)
 
-            return formatResult(plans.length, skippedIssues)
+            return formatResult(plans.length, skippedIssues, skippedCount)
         },
     })
 }
