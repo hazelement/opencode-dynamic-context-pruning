@@ -23,6 +23,7 @@ function formatStatsMessage(
     sessionTokens: number,
     sessionTools: number,
     sessionMessages: number,
+    sessionSummaryTokens: number,
     sessionDurationMs: number,
     allTime: AggregatedStats,
 ): string {
@@ -37,6 +38,7 @@ function formatStatsMessage(
     lines.push(`  Tokens pruned:   ~${formatTokenCount(sessionTokens)}`)
     lines.push(`  Tools pruned:     ${sessionTools}`)
     lines.push(`  Messages pruned:  ${sessionMessages}`)
+    lines.push(`  Summary tokens:  ~${formatTokenCount(sessionSummaryTokens)}`)
     lines.push(`  Compression time: ${formatCompressionTime(sessionDurationMs)}`)
     lines.push("")
     lines.push("All-time:")
@@ -77,6 +79,10 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
 
     // Session stats from in-memory state
     const sessionTokens = state.stats.totalPruneTokens
+    const sessionSummaryTokens = Array.from(state.prune.messages.blocksById.values()).reduce(
+        (total, block) => (block.active ? total + block.summaryTokens : total),
+        0,
+    )
     const sessionDurationMs = getActiveCompressionTargets(state.prune.messages).reduce(
         (total, target) => total + target.durationMs,
         0,
@@ -106,6 +112,7 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
         sessionTokens,
         sessionTools,
         sessionMessages,
+        sessionSummaryTokens,
         sessionDurationMs,
         allTime,
     )
@@ -117,6 +124,7 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
         sessionTokens,
         sessionTools,
         sessionMessages,
+        sessionSummaryTokens,
         sessionDurationMs,
         allTimeTokens: allTime.totalTokens,
         allTimeTools: allTime.totalTools,
