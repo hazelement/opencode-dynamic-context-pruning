@@ -11,13 +11,6 @@ export interface CompressionTimingState {
     pendingByCallId: Map<string, PendingCompressionDuration>
 }
 
-export function createCompressionTimingState(): CompressionTimingState {
-    return {
-        startsByCallId: new Map(),
-        pendingByCallId: new Map(),
-    }
-}
-
 export function consumeCompressionStart(state: SessionState, callId: string): number | undefined {
     const start = state.compressionTiming.startsByCallId.get(callId)
     state.compressionTiming.startsByCallId.delete(callId)
