@@ -21,9 +21,9 @@ export interface StatsCommandContext {
 
 function formatStatsMessage(
     sessionTokens: number,
+    sessionSummaryTokens: number,
     sessionTools: number,
     sessionMessages: number,
-    sessionSummaryTokens: number,
     sessionDurationMs: number,
     allTime: AggregatedStats,
 ): string {
@@ -33,13 +33,15 @@ function formatStatsMessage(
     lines.push("│                    DCP Statistics                         │")
     lines.push("╰───────────────────────────────────────────────────────────╯")
     lines.push("")
-    lines.push("Session:")
+    lines.push("Compression:")
     lines.push("─".repeat(60))
-    lines.push(`  Tokens pruned:   ~${formatTokenCount(sessionTokens)}`)
-    lines.push(`  Tools pruned:     ${sessionTools}`)
-    lines.push(`  Messages pruned:  ${sessionMessages}`)
-    lines.push(`  Summary tokens:  ~${formatTokenCount(sessionSummaryTokens)}`)
-    lines.push(`  Compression time: ${formatCompressionTime(sessionDurationMs)}`)
+    lines.push(
+        `  Tokens in|out:    ~${formatTokenCount(sessionTokens)} | ~${formatTokenCount(sessionSummaryTokens)}`,
+    )
+    lines.push(`  Ratio:            ${formatCompressionRatio(sessionTokens, sessionSummaryTokens)}`)
+    lines.push(`  Time:             ${formatCompressionTime(sessionDurationMs)}`)
+    lines.push(`  Messages:         ${sessionMessages}`)
+    lines.push(`  Tools:            ${sessionTools}`)
     lines.push("")
     lines.push("All-time:")
     lines.push("─".repeat(60))
@@ -49,6 +51,19 @@ function formatStatsMessage(
     lines.push(`  Sessions:         ${allTime.sessionCount}`)
 
     return lines.join("\n")
+}
+
+function formatCompressionRatio(inputTokens: number, outputTokens: number): string {
+    if (inputTokens <= 0) {
+        return "0:1"
+    }
+
+    if (outputTokens <= 0) {
+        return "∞:1"
+    }
+
+    const ratio = Math.max(1, Math.round(inputTokens / outputTokens))
+    return `${ratio}:1`
 }
 
 function formatCompressionTime(ms: number): string {
@@ -110,9 +125,9 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
 
     const message = formatStatsMessage(
         sessionTokens,
+        sessionSummaryTokens,
         sessionTools,
         sessionMessages,
-        sessionSummaryTokens,
         sessionDurationMs,
         allTime,
     )
@@ -122,9 +137,9 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
 
     logger.info("Stats command executed", {
         sessionTokens,
+        sessionSummaryTokens,
         sessionTools,
         sessionMessages,
-        sessionSummaryTokens,
         sessionDurationMs,
         allTimeTokens: allTime.totalTokens,
         allTimeTools: allTime.totalTools,
