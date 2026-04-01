@@ -1,7 +1,7 @@
 import { SessionState, WithParts } from "./state"
 import { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
 import { Logger } from "./logger"
-import { countTokens as anthropicCountTokens } from "@anthropic-ai/tokenizer"
+import * as anthropicTokenizer from "@anthropic-ai/tokenizer"
 import { getLastUserMessage } from "./messages/query"
 
 export function getCurrentTokenUsage(state: SessionState, messages: WithParts[]): number {
@@ -67,7 +67,7 @@ export function getCurrentParams(
 export function countTokens(text: string): number {
     if (!text) return 0
     try {
-        return anthropicCountTokens(text)
+        return anthropicTokenizer.countTokens(text)
     } catch {
         return Math.round(text.length / 4)
     }
