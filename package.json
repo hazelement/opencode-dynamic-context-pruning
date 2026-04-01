@@ -9,7 +9,9 @@
     "scripts": {
         "clean": "rm -rf dist",
         "build": "npm run clean && tsc",
-        "prepublishOnly": "npm run build",
+        "verify:package": "node scripts/verify-package.mjs",
+        "check:package": "npm run build && npm run verify:package",
+        "prepublishOnly": "npm run check:package",
         "dev": "opencode plugin dev",
         "typecheck": "tsc --noEmit",
         "test": "node --import tsx --test tests/*.test.ts",
