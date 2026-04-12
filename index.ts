@@ -10,7 +10,6 @@ import { Logger } from "./lib/logger"
 import { createSessionState } from "./lib/state"
 import { PromptStore } from "./lib/prompts/store"
 import {
-    createChatMessageHandler,
     createChatMessageTransformHandler,
     createCommandExecuteHandler,
     createEventHandler,
@@ -68,7 +67,6 @@ const server: Plugin = (async (ctx) => {
             prompts,
             hostPermissions,
         ) as any,
-        "chat.message": createChatMessageHandler(state, logger, config, hostPermissions),
         "experimental.text.complete": createTextCompleteHandler(),
         "command.execute.before": createCommandExecuteHandler(
             ctx.client,
@@ -135,7 +133,4 @@ const server: Plugin = (async (ctx) => {
     }
 }) satisfies Plugin
 
-export default {
-    id,
-    server,
-}
+export default server
