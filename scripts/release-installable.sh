@@ -186,6 +186,20 @@ fi
 cp -R dist "$WORKTREE_DIR/"
 git -C "$WORKTREE_DIR" add -f dist/
 
+# Copy production node_modules into the worktree for OpenCode's plugin resolver.
+# OpenCode (Bun-based) clones the repo and expects node_modules/ to exist with
+# dependencies — it does NOT run npm install after cloning.
+if [[ -d node_modules ]]; then
+    info "Copying production node_modules/ for plugin resolver..."
+    # Reinstall production-only deps in the worktree to avoid devDependencies
+    cp package.json package-lock.json "$WORKTREE_DIR/"
+    npm install --prefix "$WORKTREE_DIR" --production --ignore-scripts --no-save
+    # Force-add node_modules/ (excluding .bin/ to save space)
+    git -C "$WORKTREE_DIR" add -f node_modules/
+    # Remove .bin/ from tracking (it's regenerated on install)
+    git -C "$WORKTREE_DIR" reset node_modules/.bin/ 2>/dev/null || true
+fi
+
 # Only commit if there are actual staged changes
 if git -C "$WORKTREE_DIR" diff --cached --quiet; then
     info "No changes to commit — installable branch is already up to date."
