@@ -1,8 +1,9 @@
 import type { SessionState, WithParts } from "../state"
 import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
-import { isMessageCompacted, getLastUserMessage } from "../shared-utils"
-import { createSyntheticUserMessage } from "./utils"
+import { isMessageCompacted } from "../state/utils"
+import { createSyntheticUserMessage, replaceBlockIdsWithBlocked } from "./utils"
+import { getLastUserMessage } from "./query"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 
 const PRUNED_TOOL_OUTPUT_REPLACEMENT =
@@ -16,7 +17,7 @@ export const prune = (
     config: PluginConfig,
     messages: WithParts[],
 ): void => {
-    filterCompressedRanges(state, logger, messages)
+    filterCompressedRanges(state, logger, config, messages)
     // pruneFullTool(state, logger, messages)
     pruneToolOutputs(state, logger, messages)
     pruneToolInputs(state, logger, messages)
@@ -158,6 +159,7 @@ const pruneToolErrors = (state: SessionState, logger: Logger, messages: WithPart
 const filterCompressedRanges = (
     state: SessionState,
     logger: Logger,
+    config: PluginConfig,
     messages: WithParts[],
 ): void => {
     if (
@@ -194,15 +196,13 @@ const filterCompressedRanges = (
 
                 if (userMessage) {
                     const userInfo = userMessage.info as UserMessage
-                    const summaryContent = rawSummaryContent
+                    const summaryContent =
+                        config.compress.mode === "message"
+                            ? replaceBlockIdsWithBlocked(rawSummaryContent)
+                            : rawSummaryContent
                     const summarySeed = `${summary.blockId}:${summary.anchorMessageId}`
                     result.push(
-                        createSyntheticUserMessage(
-                            userMessage,
-                            summaryContent,
-                            userInfo.variant,
-                            summarySeed,
-                        ),
+                        createSyntheticUserMessage(userMessage, summaryContent, summarySeed),
                     )
 
                     logger.info("Injected compress summary", {

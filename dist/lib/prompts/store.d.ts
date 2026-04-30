@@ -1,13 +1,14 @@
 import type { Logger } from "../logger";
-export type PromptKey = "system" | "compress" | "context-limit-nudge" | "turn-nudge" | "iteration-nudge";
+export type PromptKey = "system" | "compress-range" | "compress-message" | "context-limit-nudge" | "turn-nudge" | "iteration-nudge";
 export interface RuntimePrompts {
     system: string;
-    compress: string;
+    compressRange: string;
+    compressMessage: string;
     contextLimitNudge: string;
     turnNudge: string;
     iterationNudge: string;
-    manualOverlay: string;
-    subagentOverlay: string;
+    manualExtension: string;
+    subagentExtension: string;
 }
 export declare const PROMPT_KEYS: PromptKey[];
 export declare class PromptStore {

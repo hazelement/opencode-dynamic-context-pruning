@@ -19,4 +19,5 @@ export interface ManualCommandContext {
 }
 export declare function handleManualToggleCommand(ctx: ManualCommandContext, modeArg?: string): Promise<void>;
 export declare function handleManualTriggerCommand(ctx: ManualCommandContext, tool: "compress", userFocus?: string): Promise<string | null>;
+export declare function applyPendingManualTrigger(state: SessionState, messages: WithParts[], logger: Logger): void;
 //# sourceMappingURL=manual.d.ts.map

@@ -14,6 +14,6 @@ export declare function formatBlockRef(blockId: number): string;
 export declare function parseMessageRef(ref: string): number | null;
 export declare function parseBlockRef(ref: string): number | null;
 export declare function parseBoundaryId(id: string): ParsedBoundaryId | null;
-export declare function formatMessageIdTag(ref: string): string;
+export declare function formatMessageIdTag(ref: string, attributes?: Record<string, string | undefined>): string;
 export declare function assignMessageRefs(state: SessionState, messages: WithParts[]): number;
 //# sourceMappingURL=message-ids.d.ts.map

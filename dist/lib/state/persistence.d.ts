@@ -12,6 +12,7 @@ export interface PersistedPruneMessagesState {
     activeBlockIds: number[];
     activeByAnchorMessageId: Record<string, number>;
     nextBlockId: number;
+    nextRunId: number;
 }
 export interface PersistedPrune {
     tools?: Record<string, number>;

@@ -1,5 +1,5 @@
+import type { CompressionTimingState } from "../compress/timing";
 import { Message, Part } from "@opencode-ai/sdk/v2";
-import type { AutoLoopState } from "../tools/compress-loop";
 export interface WithParts {
     info: Message;
     parts: Part[];
@@ -22,22 +22,23 @@ export interface PrunedMessageEntry {
     allBlockIds: number[];
     activeBlockIds: number[];
 }
-export interface ProtectedContentEntry {
-    toolName: string;
-    callId: string;
-    output: string;
-    messageId: string;
-}
+export type CompressionMode = "range" | "message";
 export interface CompressionBlock {
     blockId: number;
+    runId: number;
     active: boolean;
     deactivatedByUser: boolean;
     compressedTokens: number;
+    summaryTokens: number;
+    durationMs: number;
+    mode?: CompressionMode;
     topic: string;
+    batchTopic?: string;
     startId: string;
     endId: string;
     anchorMessageId: string;
     compressMessageId: string;
+    compressCallId?: string;
     includedBlockIds: number[];
     consumedBlockIds: number[];
     parentBlockIds: number[];
@@ -49,7 +50,6 @@ export interface CompressionBlock {
     deactivatedAt?: number;
     deactivatedByBlockId?: number;
     summary: string;
-    protectedContent?: ProtectedContentEntry[];
 }
 export interface PruneMessagesState {
     byMessageId: Map<string, PrunedMessageEntry>;
@@ -57,6 +57,7 @@ export interface PruneMessagesState {
     activeBlockIds: Set<number>;
     activeByAnchorMessageId: Map<string, number>;
     nextBlockId: number;
+    nextRunId: number;
 }
 export interface Prune {
     tools: Map<string, number>;
@@ -85,16 +86,14 @@ export interface SessionState {
     prune: Prune;
     nudges: Nudges;
     stats: SessionStats;
+    compressionTiming: CompressionTimingState;
     toolParameters: Map<string, ToolParameterEntry>;
     subAgentResultCache: Map<string, string>;
     toolIdList: string[];
     messageIds: MessageIdState;
     lastCompaction: number;
     currentTurn: number;
-    variant: string | undefined;
     modelContextLimit: number | undefined;
     systemPromptTokens: number | undefined;
-    autoLoopActive: boolean;
-    autoLoopState: AutoLoopState | null;
 }
 //# sourceMappingURL=types.d.ts.map

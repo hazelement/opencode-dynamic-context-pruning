@@ -1,20 +1,54 @@
 import type {
     CompressionBlock,
-    ProtectedContentEntry,
     PruneMessagesState,
     PrunedMessageEntry,
     SessionState,
     WithParts,
 } from "./types"
-import { isMessageCompacted } from "../shared-utils"
-import { isIgnoredUserMessage } from "../messages/utils"
+import { isIgnoredUserMessage, messageHasCompress } from "../messages/query"
+import { isMessageWithInfo } from "../messages/shape"
+import { countTokens } from "../token-utils"
+
+export const isMessageCompacted = (state: SessionState, msg: WithParts): boolean => {
+    if (!isMessageWithInfo(msg)) {
+        return false
+    }
+
+    if (msg.info.time.created < state.lastCompaction) {
+        return true
+    }
+    const pruneEntry = state.prune.messages.byMessageId.get(msg.info.id)
+    if (pruneEntry && pruneEntry.activeBlockIds.length > 0) {
+        return true
+    }
+    return false
+}
 
 interface PersistedPruneMessagesState {
-    byMessageId?: Record<string, PrunedMessageEntry>
-    blocksById?: Record<string, CompressionBlock>
-    activeBlockIds?: number[]
-    activeByAnchorMessageId?: Record<string, number>
-    nextBlockId?: number
+    byMessageId: Record<string, PrunedMessageEntry>
+    blocksById: Record<string, CompressionBlock>
+    activeBlockIds: number[]
+    activeByAnchorMessageId: Record<string, number>
+    nextBlockId: number
+    nextRunId: number
+}
+
+export function serializePruneMessagesState(
+    messagesState: PruneMessagesState,
+): PersistedPruneMessagesState {
+    return {
+        byMessageId: Object.fromEntries(messagesState.byMessageId),
+        blocksById: Object.fromEntries(
+            Array.from(messagesState.blocksById.entries()).map(([blockId, block]) => [
+                String(blockId),
+                block,
+            ]),
+        ),
+        activeBlockIds: Array.from(messagesState.activeBlockIds),
+        activeByAnchorMessageId: Object.fromEntries(messagesState.activeByAnchorMessageId),
+        nextBlockId: messagesState.nextBlockId,
+        nextRunId: messagesState.nextRunId,
+    }
 }
 
 export async function isSubAgentSession(client: any, sessionID: string): Promise<boolean> {
@@ -29,6 +63,9 @@ export async function isSubAgentSession(client: any, sessionID: string): Promise
 export function findLastCompactionTimestamp(messages: WithParts[]): number {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i]
+        if (!isMessageWithInfo(msg)) {
+            continue
+        }
         if (msg.info.role === "assistant" && msg.info.summary === true) {
             return msg.info.time.created
         }
@@ -39,6 +76,9 @@ export function findLastCompactionTimestamp(messages: WithParts[]): number {
 export function countTurns(state: SessionState, messages: WithParts[]): number {
     let turnCount = 0
     for (const msg of messages) {
+        if (!isMessageWithInfo(msg)) {
+            continue
+        }
         if (isMessageCompacted(state, msg)) {
             continue
         }
@@ -71,35 +111,8 @@ export function createPruneMessagesState(): PruneMessagesState {
         activeBlockIds: new Set<number>(),
         activeByAnchorMessageId: new Map<string, number>(),
         nextBlockId: 1,
+        nextRunId: 1,
     }
-}
-
-function deserializeProtectedContent(value: unknown): ProtectedContentEntry[] | undefined {
-    if (!Array.isArray(value) || value.length === 0) {
-        return undefined
-    }
-
-    const entries: ProtectedContentEntry[] = []
-    for (const item of value) {
-        if (!item || typeof item !== "object") {
-            continue
-        }
-        if (
-            typeof item.toolName === "string" &&
-            typeof item.callId === "string" &&
-            typeof item.output === "string" &&
-            typeof item.messageId === "string"
-        ) {
-            entries.push({
-                toolName: item.toolName,
-                callId: item.callId,
-                output: item.output,
-                messageId: item.messageId,
-            })
-        }
-    }
-
-    return entries.length > 0 ? entries : undefined
 }
 
 export function loadPruneMessagesState(
@@ -112,6 +125,9 @@ export function loadPruneMessagesState(
 
     if (typeof persisted.nextBlockId === "number" && Number.isInteger(persisted.nextBlockId)) {
         state.nextBlockId = Math.max(1, persisted.nextBlockId)
+    }
+    if (typeof persisted.nextRunId === "number" && Number.isInteger(persisted.nextRunId)) {
+        state.nextRunId = Math.max(1, persisted.nextRunId)
     }
 
     if (persisted.byMessageId && typeof persisted.byMessageId === "object") {
@@ -172,6 +188,12 @@ export function loadPruneMessagesState(
 
             state.blocksById.set(blockId, {
                 blockId,
+                runId:
+                    typeof block.runId === "number" &&
+                    Number.isInteger(block.runId) &&
+                    block.runId > 0
+                        ? block.runId
+                        : blockId,
                 active: block.active === true,
                 deactivatedByUser: block.deactivatedByUser === true,
                 compressedTokens:
@@ -179,13 +201,32 @@ export function loadPruneMessagesState(
                     Number.isFinite(block.compressedTokens)
                         ? Math.max(0, block.compressedTokens)
                         : 0,
+                summaryTokens:
+                    typeof block.summaryTokens === "number" && Number.isFinite(block.summaryTokens)
+                        ? Math.max(0, block.summaryTokens)
+                        : typeof block.summary === "string"
+                          ? countTokens(block.summary)
+                          : 0,
+                durationMs:
+                    typeof block.durationMs === "number" && Number.isFinite(block.durationMs)
+                        ? Math.max(0, block.durationMs)
+                        : 0,
+                mode: block.mode === "range" || block.mode === "message" ? block.mode : undefined,
                 topic: typeof block.topic === "string" ? block.topic : "",
+                batchTopic:
+                    typeof block.batchTopic === "string"
+                        ? block.batchTopic
+                        : typeof block.topic === "string"
+                          ? block.topic
+                          : "",
                 startId: typeof block.startId === "string" ? block.startId : "",
                 endId: typeof block.endId === "string" ? block.endId : "",
                 anchorMessageId:
                     typeof block.anchorMessageId === "string" ? block.anchorMessageId : "",
                 compressMessageId:
                     typeof block.compressMessageId === "string" ? block.compressMessageId : "",
+                compressCallId:
+                    typeof block.compressCallId === "string" ? block.compressCallId : undefined,
                 includedBlockIds: toNumberArray(block.includedBlockIds),
                 consumedBlockIds: toNumberArray(block.consumedBlockIds),
                 parentBlockIds: toNumberArray(block.parentBlockIds),
@@ -202,7 +243,6 @@ export function loadPruneMessagesState(
                         ? block.deactivatedByBlockId
                         : undefined,
                 summary: typeof block.summary === "string" ? block.summary : "",
-                protectedContent: deserializeProtectedContent(block.protectedContent),
             })
         }
     }
@@ -240,21 +280,12 @@ export function loadPruneMessagesState(
         if (blockId >= state.nextBlockId) {
             state.nextBlockId = blockId + 1
         }
+        if (block.runId >= state.nextRunId) {
+            state.nextRunId = block.runId + 1
+        }
     }
 
     return state
-}
-
-function hasCompletedCompress(message: WithParts): boolean {
-    if (message.info.role !== "assistant") {
-        return false
-    }
-
-    const parts = Array.isArray(message.parts) ? message.parts : []
-    return parts.some(
-        (part) =>
-            part.type === "tool" && part.tool === "compress" && part.state?.status === "completed",
-    )
 }
 
 export function collectTurnNudgeAnchors(messages: WithParts[]): Set<string> {
@@ -264,7 +295,7 @@ export function collectTurnNudgeAnchors(messages: WithParts[]): Set<string> {
     for (let i = messages.length - 1; i >= 0; i--) {
         const message = messages[i]
 
-        if (hasCompletedCompress(message)) {
+        if (messageHasCompress(message)) {
             break
         }
 
@@ -285,10 +316,27 @@ export function collectTurnNudgeAnchors(messages: WithParts[]): Set<string> {
     return anchors
 }
 
+export function getActiveSummaryTokenUsage(state: SessionState): number {
+    let total = 0
+    for (const blockId of state.prune.messages.activeBlockIds) {
+        const block = state.prune.messages.blocksById.get(blockId)
+        if (!block || !block.active) {
+            continue
+        }
+        total += block.summaryTokens
+    }
+    return total
+}
+
 export function resetOnCompaction(state: SessionState): void {
     state.toolParameters.clear()
     state.prune.tools = new Map<string, number>()
     state.prune.messages = createPruneMessagesState()
+    state.messageIds = {
+        byRawId: new Map<string, string>(),
+        byRef: new Map<string, string>(),
+        nextRef: 1,
+    }
     state.nudges = {
         contextLimitAnchors: new Set<string>(),
         turnNudgeAnchors: new Set<string>(),

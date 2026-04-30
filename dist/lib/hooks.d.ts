@@ -1,8 +1,8 @@
 import type { SessionState, WithParts } from "./state";
 import type { Logger } from "./logger";
 import type { PluginConfig } from "./config";
+import { type PromptStore } from "./prompts";
 import { type HostPermissionSnapshot } from "./host-permissions";
-import type { PromptStore } from "./prompts/store";
 export declare function createSystemPromptHandler(state: SessionState, logger: Logger, config: PluginConfig, prompts: PromptStore): (input: {
     sessionID?: string;
     model: {
@@ -29,5 +29,8 @@ export declare function createTextCompleteHandler(): (_input: {
     partID: string;
 }, output: {
     text: string;
+}) => Promise<void>;
+export declare function createEventHandler(state: SessionState, logger: Logger): (input: {
+    event: any;
 }) => Promise<void>;
 //# sourceMappingURL=hooks.d.ts.map

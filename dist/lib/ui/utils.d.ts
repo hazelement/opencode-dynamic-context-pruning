@@ -1,6 +1,6 @@
 import { SessionState, ToolParameterEntry, WithParts } from "../state";
 export declare function formatStatsHeader(totalTokensSaved: number, pruneTokenCounter: number): string;
-export declare function formatTokenCount(tokens: number): string;
+export declare function formatTokenCount(tokens: number, compact?: boolean): string;
 export declare function truncate(str: string, maxLen?: number): string;
 export declare function formatProgressBar(messageIds: string[], prunedMessages: Map<string, number>, recentMessageIds: string[], width?: number): string;
 export declare function cacheSystemPromptTokens(state: SessionState, messages: WithParts[]): void;

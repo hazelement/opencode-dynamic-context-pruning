@@ -1,12 +1,15 @@
 import type { PluginInput } from "@opencode-ai/plugin";
 type Permission = "ask" | "allow" | "deny";
+type CompressMode = "range" | "message";
 export interface Deduplication {
     enabled: boolean;
     protectedTools: string[];
 }
-export interface CompressTool {
+export interface CompressConfig {
+    mode: CompressMode;
     permission: Permission;
     showCompression: boolean;
+    summaryBuffer: boolean;
     maxContextLimit: number | `${number}%`;
     minContextLimit: number | `${number}%`;
     modelMaxLimits?: Record<string, number | `${number}%`>;
@@ -14,14 +17,11 @@ export interface CompressTool {
     nudgeFrequency: number;
     iterationNudgeThreshold: number;
     nudgeForce: "strong" | "soft";
-    flatSchema: boolean;
     protectedTools: string[];
     protectUserMessages: boolean;
     contextTarget: number;
     protectedToolRetention: number;
     mergeMode: "strict" | "normal";
-    autoLoop: boolean;
-    maxPasses: number;
 }
 export interface Commands {
     enabled: boolean;
@@ -30,9 +30,6 @@ export interface Commands {
 export interface ManualModeConfig {
     enabled: boolean;
     automaticStrategies: boolean;
-}
-export interface SupersedeWrites {
-    enabled: boolean;
 }
 export interface PurgeErrors {
     enabled: boolean;
@@ -57,10 +54,9 @@ export interface PluginConfig {
     turnProtection: TurnProtection;
     experimental: ExperimentalConfig;
     protectedFilePatterns: string[];
-    compress: CompressTool;
+    compress: CompressConfig;
     strategies: {
         deduplication: Deduplication;
-        supersedeWrites: SupersedeWrites;
         purgeErrors: PurgeErrors;
     };
 }

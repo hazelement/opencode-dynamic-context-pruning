@@ -1,4 +1,4 @@
 import type { Plugin } from "@opencode-ai/plugin";
-declare const plugin: Plugin;
-export default plugin;
+declare const server: Plugin;
+export default server;
 //# sourceMappingURL=index.d.ts.map
