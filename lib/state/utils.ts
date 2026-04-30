@@ -1,6 +1,5 @@
 import type {
     CompressionBlock,
-    ProtectedContentEntry,
     PruneMessagesState,
     PrunedMessageEntry,
     SessionState,
@@ -114,34 +113,6 @@ export function createPruneMessagesState(): PruneMessagesState {
         nextBlockId: 1,
         nextRunId: 1,
     }
-}
-
-function deserializeProtectedContent(value: unknown): ProtectedContentEntry[] | undefined {
-    if (!Array.isArray(value) || value.length === 0) {
-        return undefined
-    }
-
-    const entries: ProtectedContentEntry[] = []
-    for (const item of value) {
-        if (!item || typeof item !== "object") {
-            continue
-        }
-        if (
-            typeof item.toolName === "string" &&
-            typeof item.callId === "string" &&
-            typeof item.output === "string" &&
-            typeof item.messageId === "string"
-        ) {
-            entries.push({
-                toolName: item.toolName,
-                callId: item.callId,
-                output: item.output,
-                messageId: item.messageId,
-            })
-        }
-    }
-
-    return entries.length > 0 ? entries : undefined
 }
 
 export function loadPruneMessagesState(
@@ -272,7 +243,6 @@ export function loadPruneMessagesState(
                         ? block.deactivatedByBlockId
                         : undefined,
                 summary: typeof block.summary === "string" ? block.summary : "",
-                protectedContent: deserializeProtectedContent(block.protectedContent),
             })
         }
     }

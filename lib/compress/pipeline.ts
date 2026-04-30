@@ -17,7 +17,7 @@ interface RunContext {
         patterns: string[]
         always: string[]
         metadata: Record<string, unknown>
-    }): Promise<void>
+    }): unknown
     metadata(input: { title: string }): void
     sessionID: string
 }
