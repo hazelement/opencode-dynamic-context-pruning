@@ -30,7 +30,7 @@ To install this fork (e.g. with custom modifications), point at the `installable
 // opencode.jsonc
 {
     "plugin": [
-        "@haze/opencode-dcp@git+https://github.com/hazelement/opencode-dynamic-context-pruning.git#installable",
+        "haze-opencode-dcp@git+https://github.com/hazelement/opencode-dynamic-context-pruning.git#installable",
     ],
 }
 ```

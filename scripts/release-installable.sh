@@ -204,7 +204,7 @@ if [[ "$PUSH" == true ]]; then
     git push origin "$INSTALLABLE_BRANCH" --force-with-lease
     PUSH_SUCCEEDED=true
     info "Done! Install via:"
-    echo "  \"@haze/opencode-dcp@git+https://github.com/hazelement/opencode-dynamic-context-pruning.git#installable\""
+    echo "  \"haze-opencode-dcp@git+https://github.com/hazelement/opencode-dynamic-context-pruning.git#installable\""
 else
     PUSH_SUCCEEDED=true  # Intentional --no-push: keep the local branch
     info "Branch '$INSTALLABLE_BRANCH' updated locally (--no-push)."

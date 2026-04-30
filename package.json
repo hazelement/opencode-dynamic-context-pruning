@@ -1,11 +1,17 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
-    "name": "@haze/opencode-dcp",
+    "name": "haze-opencode-dcp",
     "version": "3.0.4",
     "type": "module",
     "description": "OpenCode plugin that optimizes token usage by pruning obsolete tool outputs from conversation context",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
     "scripts": {
         "clean": "rm -rf dist",
         "build": "npm run clean && tsc",
