@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { getConfig } from "./lib/config"
+import { createCompressMessageTool, createCompressRangeTool } from "./lib/compress"
 import {
     compressDisabledByOpencode,
     hasExplicitToolPermission,
@@ -7,17 +8,19 @@ import {
 } from "./lib/host-permissions"
 import { Logger } from "./lib/logger"
 import { createSessionState } from "./lib/state"
-import { createCompressTool } from "./lib/tools"
 import { PromptStore } from "./lib/prompts/store"
 import {
     createChatMessageTransformHandler,
     createCommandExecuteHandler,
+    createEventHandler,
     createSystemPromptHandler,
     createTextCompleteHandler,
 } from "./lib/hooks"
 import { configureClientAuth, isSecureMode } from "./lib/auth"
 
-const plugin: Plugin = (async (ctx) => {
+const id = "opencode-dynamic-context-pruning"
+
+const server: Plugin = (async (ctx) => {
     const config = getConfig(ctx)
 
     if (!config.enabled) {
@@ -41,6 +44,14 @@ const plugin: Plugin = (async (ctx) => {
         strategies: config.strategies,
     })
 
+    const compressToolContext = {
+        client: ctx.client,
+        state,
+        logger,
+        config,
+        prompts,
+    }
+
     return {
         "experimental.chat.system.transform": createSystemPromptHandler(
             state,
@@ -48,7 +59,6 @@ const plugin: Plugin = (async (ctx) => {
             config,
             prompts,
         ),
-
         "experimental.chat.messages.transform": createChatMessageTransformHandler(
             ctx.client,
             state,
@@ -57,19 +67,6 @@ const plugin: Plugin = (async (ctx) => {
             prompts,
             hostPermissions,
         ) as any,
-        "chat.message": async (
-            input: {
-                sessionID: string
-                agent?: string
-                model?: { providerID: string; modelID: string }
-                messageID?: string
-                variant?: string
-            },
-            _output: any,
-        ) => {
-            state.variant = input.variant
-            logger.debug("Cached variant from chat.message hook", { variant: input.variant })
-        },
         "experimental.text.complete": createTextCompleteHandler(),
         "command.execute.before": createCommandExecuteHandler(
             ctx.client,
@@ -79,32 +76,29 @@ const plugin: Plugin = (async (ctx) => {
             ctx.directory,
             hostPermissions,
         ),
+        event: createEventHandler(state, logger),
         tool: {
             ...(config.compress.permission !== "deny" && {
-                compress: createCompressTool({
-                    client: ctx.client,
-                    state,
-                    logger,
-                    config,
-                    workingDirectory: ctx.directory,
-                    prompts,
-                }),
+                compress:
+                    config.compress.mode === "message"
+                        ? createCompressMessageTool(compressToolContext)
+                        : createCompressRangeTool(compressToolContext),
             }),
         },
         config: async (opencodeConfig) => {
-            if (config.commands.enabled) {
-                opencodeConfig.command ??= {}
-                opencodeConfig.command["dcp"] = {
-                    template: "",
-                    description: "Show available DCP commands",
-                }
-            }
-
             if (
                 config.compress.permission !== "deny" &&
                 compressDisabledByOpencode(opencodeConfig.permission)
             ) {
                 config.compress.permission = "deny"
+            }
+
+            if (config.commands.enabled && config.compress.permission !== "deny") {
+                opencodeConfig.command ??= {}
+                opencodeConfig.command["dcp"] = {
+                    template: "",
+                    description: "Show available DCP commands",
+                }
             }
 
             const toolsToAdd: string[] = []
@@ -139,4 +133,4 @@ const plugin: Plugin = (async (ctx) => {
     }
 }) satisfies Plugin
 
-export default plugin
+export default server

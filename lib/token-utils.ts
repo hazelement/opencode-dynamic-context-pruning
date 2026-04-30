@@ -1,28 +1,39 @@
-import { SessionState, WithParts } from "../state"
+import { SessionState, WithParts } from "./state"
 import { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
-import { Logger } from "../logger"
-import { countTokens as anthropicCountTokens } from "@anthropic-ai/tokenizer"
-import { getLastUserMessage } from "../shared-utils"
+import { Logger } from "./logger"
+import * as _anthropicTokenizer from "@anthropic-ai/tokenizer"
+const anthropicCountTokens = (_anthropicTokenizer.countTokens ??
+    (_anthropicTokenizer as any).default?.countTokens) as typeof _anthropicTokenizer.countTokens
+import { getLastUserMessage } from "./messages/query"
 
-/**
- * Get current token usage from the last assistant message.
- * Returns total tokens (input + output + reasoning + cache).
- */
-export function getCurrentTokenUsage(messages: WithParts[]): number {
+export function getCurrentTokenUsage(state: SessionState, messages: WithParts[]): number {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i]
-        if (msg.info.role === "assistant") {
-            const assistantInfo = msg.info as AssistantMessage
-            if (assistantInfo.tokens?.output > 0) {
-                const input = assistantInfo.tokens?.input || 0
-                const output = assistantInfo.tokens?.output || 0
-                const reasoning = assistantInfo.tokens?.reasoning || 0
-                const cacheRead = assistantInfo.tokens?.cache?.read || 0
-                const cacheWrite = assistantInfo.tokens?.cache?.write || 0
-                return input + output + reasoning + cacheRead + cacheWrite
-            }
+        if (msg.info.role !== "assistant") {
+            continue
         }
+
+        const assistantInfo = msg.info as AssistantMessage
+        if ((assistantInfo.tokens?.output || 0) <= 0) {
+            continue
+        }
+
+        if (
+            state.lastCompaction > 0 &&
+            (msg.info.time.created < state.lastCompaction ||
+                (msg.info.summary === true && msg.info.time.created === state.lastCompaction))
+        ) {
+            return 0
+        }
+
+        const input = assistantInfo.tokens?.input || 0
+        const output = assistantInfo.tokens?.output || 0
+        const reasoning = assistantInfo.tokens?.reasoning || 0
+        const cacheRead = assistantInfo.tokens?.cache?.read || 0
+        const cacheWrite = assistantInfo.tokens?.cache?.write || 0
+        return input + output + reasoning + cacheRead + cacheWrite
     }
+
     return 0
 }
 
@@ -43,14 +54,14 @@ export function getCurrentParams(
             providerId: undefined,
             modelId: undefined,
             agent: undefined,
-            variant: state.variant,
+            variant: undefined,
         }
     }
     const userInfo = userMsg.info as UserMessage
     const agent: string = userInfo.agent
     const providerId: string | undefined = userInfo.model.providerID
     const modelId: string | undefined = userInfo.model.modelID
-    const variant: string | undefined = state.variant ?? userInfo.variant
+    const variant: string | undefined = userInfo.model.variant
 
     return { providerId, modelId, agent, variant }
 }
@@ -69,40 +80,44 @@ export function estimateTokensBatch(texts: string[]): number {
     return countTokens(texts.join(" "))
 }
 
+export const COMPACTED_TOOL_OUTPUT_PLACEHOLDER = "[Old tool result content cleared]"
+
+function stringifyToolContent(value: unknown): string {
+    return typeof value === "string" ? value : JSON.stringify(value)
+}
+
+export function extractCompletedToolOutput(part: any): string | undefined {
+    if (
+        part?.type !== "tool" ||
+        part.state?.status !== "completed" ||
+        part.state?.output === undefined
+    ) {
+        return undefined
+    }
+
+    if (part.state?.time?.compacted) {
+        return COMPACTED_TOOL_OUTPUT_PLACEHOLDER
+    }
+
+    return stringifyToolContent(part.state.output)
+}
+
 export function extractToolContent(part: any): string[] {
     const contents: string[] = []
 
-    if (part.tool === "question") {
-        const questions = part.state?.input?.questions
-        if (questions !== undefined) {
-            const content = typeof questions === "string" ? questions : JSON.stringify(questions)
-            contents.push(content)
-        }
+    if (part?.type !== "tool") {
         return contents
     }
 
-    if (part.tool === "edit" || part.tool === "write") {
-        if (part.state?.input) {
-            const inputContent =
-                typeof part.state.input === "string"
-                    ? part.state.input
-                    : JSON.stringify(part.state.input)
-            contents.push(inputContent)
-        }
+    if (part.state?.input !== undefined) {
+        contents.push(stringifyToolContent(part.state.input))
     }
 
-    if (part.state?.status === "completed" && part.state?.output) {
-        const content =
-            typeof part.state.output === "string"
-                ? part.state.output
-                : JSON.stringify(part.state.output)
-        contents.push(content)
+    const completedOutput = extractCompletedToolOutput(part)
+    if (completedOutput !== undefined) {
+        contents.push(completedOutput)
     } else if (part.state?.status === "error" && part.state?.error) {
-        const content =
-            typeof part.state.error === "string"
-                ? part.state.error
-                : JSON.stringify(part.state.error)
-        contents.push(content)
+        contents.push(stringifyToolContent(part.state.error))
     }
 
     return contents

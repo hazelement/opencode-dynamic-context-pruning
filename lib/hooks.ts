@@ -2,71 +2,48 @@ import type { SessionState, WithParts } from "./state"
 import type { Logger } from "./logger"
 import type { PluginConfig } from "./config"
 import { assignMessageRefs } from "./message-ids"
-import { syncToolCache } from "./state/tool-cache"
 import {
-    prune,
-    syncCompressionBlocks,
+    buildPriorityMap,
+    buildToolIdList,
     injectCompressNudges,
-    injectMessageIds,
     injectExtendedSubAgentResults,
+    injectMessageIds,
+    prune,
+    stripHallucinations,
+    stripHallucinationsFromString,
     stripStaleMetadata,
+    syncCompressionBlocks,
 } from "./messages"
-import { buildToolIdList, isIgnoredUserMessage, stripHallucinations } from "./messages/utils"
-import { checkSession } from "./state"
-import { renderSystemPrompt } from "./prompts"
-import { handleStatsCommand } from "./commands/stats"
-import { handleContextCommand } from "./commands/context"
-import { handleHelpCommand } from "./commands/help"
-import { handleSweepCommand } from "./commands/sweep"
-import { handleManualToggleCommand, handleManualTriggerCommand } from "./commands/manual"
-import { handleDecompressCommand } from "./commands/decompress"
-import { handleRecompressCommand } from "./commands/recompress"
+import { renderSystemPrompt, type PromptStore } from "./prompts"
+import { buildProtectedToolsExtension } from "./prompts/extensions/system"
+import {
+    applyPendingCompressionDurations,
+    buildCompressionTimingKey,
+    consumeCompressionStart,
+    resolveCompressionDuration,
+} from "./compress/timing"
+import { filterMessages, filterMessagesInPlace } from "./messages/shape"
+import {
+    applyPendingManualTrigger,
+    handleContextCommand,
+    handleDecompressCommand,
+    handleHelpCommand,
+    handleManualToggleCommand,
+    handleManualTriggerCommand,
+    handleRecompressCommand,
+    handleStatsCommand,
+    handleSweepCommand,
+} from "./commands"
 import { type HostPermissionSnapshot } from "./host-permissions"
-import { compressPermission, syncCompressPermissionState } from "./shared-utils"
-import { ensureSessionInitialized } from "./state/state"
+import { compressPermission, syncCompressPermissionState } from "./compress-permission"
+import { checkSession, ensureSessionInitialized, saveSessionState, syncToolCache } from "./state"
 import { cacheSystemPromptTokens } from "./ui/utils"
-import type { PromptStore } from "./prompts/store"
 
 const INTERNAL_AGENT_SIGNATURES = [
     "You are a title generator",
     "You are a helpful AI assistant tasked with summarizing conversations",
     "Summarize what was done in this conversation",
 ]
-
-const DCP_MESSAGE_ID_TAG_REGEX = /<dcp-message-id>(?:m\d+|b\d+)<\/dcp-message-id>/g
-const DCP_SYSTEM_REMINDER_REGEX = /<dcp-system-reminder\b[^>]*>[\s\S]*?<\/dcp-system-reminder>/g
-
-function applyManualPrompt(state: SessionState, messages: WithParts[], logger: Logger): void {
-    const pending = state.pendingManualTrigger
-    if (!pending) {
-        return
-    }
-
-    if (!state.sessionId || pending.sessionId !== state.sessionId) {
-        state.pendingManualTrigger = null
-        return
-    }
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i]
-        if (msg.info.role !== "user" || isIgnoredUserMessage(msg)) {
-            continue
-        }
-
-        for (const part of msg.parts) {
-            if (part.type !== "text" || part.ignored || part.synthetic) {
-                continue
-            }
-
-            part.text = pending.prompt
-            state.pendingManualTrigger = null
-            logger.debug("Applied manual prompt", { sessionId: pending.sessionId })
-            return
-        }
-    }
-
-    state.pendingManualTrigger = null
-}
 
 export function createSystemPromptHandler(
     state: SessionState,
@@ -106,6 +83,7 @@ export function createSystemPromptHandler(
         const runtimePrompts = prompts.getRuntimePrompts()
         const newPrompt = renderSystemPrompt(
             runtimePrompts,
+            buildProtectedToolsExtension(config.compress.protectedTools),
             !!state.manualMode,
             state.isSubAgent && config.experimental.allowSubAgents,
         )
@@ -126,6 +104,15 @@ export function createChatMessageTransformHandler(
     hostPermissions: HostPermissionSnapshot,
 ) {
     return async (input: {}, output: { messages: WithParts[] }) => {
+        const receivedMessages = Array.isArray(output.messages) ? output.messages.length : 0
+        const messages = filterMessagesInPlace(output.messages)
+        if (messages.length !== receivedMessages) {
+            logger.warn("Skipping messages with unexpected shape during chat transform", {
+                received: receivedMessages,
+                usable: messages.length,
+            })
+        }
+
         await checkSession(client, state, logger, output.messages, config.manualMode.enabled)
 
         syncCompressPermissionState(state, config, hostPermissions, output.messages)
@@ -148,10 +135,18 @@ export function createChatMessageTransformHandler(
             output.messages,
             config.experimental.allowSubAgents,
         )
+        const compressionPriorities = buildPriorityMap(config, state, output.messages)
         prompts.reload()
-        injectCompressNudges(state, config, logger, output.messages, prompts.getRuntimePrompts())
-        injectMessageIds(state, config, output.messages)
-        applyManualPrompt(state, output.messages, logger)
+        injectCompressNudges(
+            state,
+            config,
+            logger,
+            output.messages,
+            prompts.getRuntimePrompts(),
+            compressionPriorities,
+        )
+        injectMessageIds(state, config, output.messages, compressionPriorities)
+        applyPendingManualTrigger(state, output.messages, logger)
         stripStaleMetadata(output.messages)
 
         if (state.sessionId) {
@@ -180,7 +175,7 @@ export function createCommandExecuteHandler(
             const messagesResponse = await client.session.messages({
                 path: { id: input.sessionID },
             })
-            const messages = (messagesResponse.data || messagesResponse) as WithParts[]
+            const messages = filterMessages(messagesResponse.data || messagesResponse)
 
             await ensureSessionInitialized(
                 client,
@@ -194,6 +189,9 @@ export function createCommandExecuteHandler(
             syncCompressPermissionState(state, config, hostPermissions, messages)
 
             const effectivePermission = compressPermission(state, config)
+            if (effectivePermission === "deny") {
+                return
+            }
 
             const args = (input.arguments || "").trim().split(/\s+/).filter(Boolean)
             const subcommand = args[0]?.toLowerCase() || ""
@@ -232,7 +230,7 @@ export function createCommandExecuteHandler(
                 throw new Error("__DCP_MANUAL_HANDLED__")
             }
 
-            if (subcommand === "compress" && effectivePermission !== "deny") {
+            if (subcommand === "compress") {
                 const userFocus = subArgs.join(" ").trim()
                 const prompt = await handleManualTriggerCommand(commandCtx, "compress", userFocus)
                 if (!prompt) {
@@ -253,7 +251,7 @@ export function createCommandExecuteHandler(
                 return
             }
 
-            if (subcommand === "decompress" && effectivePermission !== "deny") {
+            if (subcommand === "decompress") {
                 await handleDecompressCommand({
                     ...commandCtx,
                     args: subArgs,
@@ -261,7 +259,7 @@ export function createCommandExecuteHandler(
                 throw new Error("__DCP_DECOMPRESS_HANDLED__")
             }
 
-            if (subcommand === "recompress" && effectivePermission !== "deny") {
+            if (subcommand === "recompress") {
                 await handleRecompressCommand({
                     ...commandCtx,
                     args: subArgs,
@@ -280,8 +278,90 @@ export function createTextCompleteHandler() {
         _input: { sessionID: string; messageID: string; partID: string },
         output: { text: string },
     ) => {
-        output.text = output.text
-            .replace(DCP_SYSTEM_REMINDER_REGEX, "")
-            .replace(DCP_MESSAGE_ID_TAG_REGEX, "")
+        output.text = stripHallucinationsFromString(output.text)
+    }
+}
+
+export function createEventHandler(state: SessionState, logger: Logger) {
+    return async (input: { event: any }) => {
+        const eventTime =
+            typeof input.event?.time === "number" && Number.isFinite(input.event.time)
+                ? input.event.time
+                : typeof input.event?.properties?.time === "number" &&
+                    Number.isFinite(input.event.properties.time)
+                  ? input.event.properties.time
+                  : undefined
+
+        if (input.event.type !== "message.part.updated") {
+            return
+        }
+
+        const part = input.event.properties?.part
+        if (part?.type !== "tool" || part.tool !== "compress") {
+            return
+        }
+
+        if (part.state.status === "pending") {
+            if (typeof part.callID !== "string" || typeof part.messageID !== "string") {
+                return
+            }
+
+            const startedAt = eventTime ?? Date.now()
+            const key = buildCompressionTimingKey(part.messageID, part.callID)
+            if (state.compressionTiming.startsByCallId.has(key)) {
+                return
+            }
+            state.compressionTiming.startsByCallId.set(key, startedAt)
+            logger.debug("Recorded compression start", {
+                messageID: part.messageID,
+                callID: part.callID,
+                startedAt,
+            })
+            return
+        }
+
+        if (part.state.status === "completed") {
+            if (typeof part.callID !== "string" || typeof part.messageID !== "string") {
+                return
+            }
+
+            const key = buildCompressionTimingKey(part.messageID, part.callID)
+            const start = consumeCompressionStart(state, part.messageID, part.callID)
+            const durationMs = resolveCompressionDuration(start, eventTime, part.state.time)
+            if (typeof durationMs !== "number") {
+                return
+            }
+
+            state.compressionTiming.pendingByCallId.set(key, {
+                messageId: part.messageID,
+                callId: part.callID,
+                durationMs,
+            })
+
+            const updates = applyPendingCompressionDurations(state)
+            if (updates === 0) {
+                return
+            }
+
+            await saveSessionState(state, logger)
+
+            logger.info("Attached compression time to blocks", {
+                messageID: part.messageID,
+                callID: part.callID,
+                blocks: updates,
+                durationMs,
+            })
+            return
+        }
+
+        if (part.state.status === "running") {
+            return
+        }
+
+        if (typeof part.callID === "string" && typeof part.messageID === "string") {
+            state.compressionTiming.startsByCallId.delete(
+                buildCompressionTimingKey(part.messageID, part.callID),
+            )
+        }
     }
 }

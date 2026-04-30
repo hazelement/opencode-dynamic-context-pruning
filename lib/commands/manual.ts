@@ -11,8 +11,9 @@ import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import type { PluginConfig } from "../config"
 import { sendIgnoredMessage } from "../ui/notification"
-import { getCurrentParams } from "../strategies/utils"
-import { buildCompressedBlockGuidance } from "../messages/inject/utils"
+import { getCurrentParams } from "../token-utils"
+import { buildCompressedBlockGuidance } from "../prompts/extensions/nudge"
+import { isIgnoredUserMessage } from "../messages/query"
 
 const MANUAL_MODE_ON = "Manual mode is now ON. Use /dcp compress to trigger context tools manually."
 
@@ -21,9 +22,9 @@ const MANUAL_MODE_OFF = "Manual mode is now OFF."
 const COMPRESS_TRIGGER_PROMPT = [
     "<compress triggered manually>",
     "Manual mode trigger received. You must now use the compress tool.",
-    "Find the most significant completed section of the conversation that can be compressed into a high-fidelity technical summary.",
-    "Choose safe boundaries and preserve all critical implementation details.",
-    "Return after compress with a brief explanation of what range was compressed.",
+    "Find the most significant completed conversation content that can be compressed into a high-fidelity technical summary.",
+    "Follow the active compress mode, preserve all critical implementation details, and choose safe targets.",
+    "Return after compress with a brief explanation of what content was compressed.",
 ].join("\n\n")
 
 function getTriggerPrompt(
@@ -33,7 +34,8 @@ function getTriggerPrompt(
     userFocus?: string,
 ): string {
     const base = COMPRESS_TRIGGER_PROMPT
-    const compressedBlockGuidance = buildCompressedBlockGuidance(state, config.compress.mergeMode)
+    const compressedBlockGuidance =
+        config.compress.mode === "message" ? "" : buildCompressedBlockGuidance(state)
 
     const sections = [base, compressedBlockGuidance]
     if (userFocus && userFocus.trim().length > 0) {
@@ -84,4 +86,40 @@ export async function handleManualTriggerCommand(
     userFocus?: string,
 ): Promise<string | null> {
     return getTriggerPrompt(tool, ctx.state, ctx.config, userFocus)
+}
+
+export function applyPendingManualTrigger(
+    state: SessionState,
+    messages: WithParts[],
+    logger: Logger,
+): void {
+    const pending = state.pendingManualTrigger
+    if (!pending) {
+        return
+    }
+
+    if (!state.sessionId || pending.sessionId !== state.sessionId) {
+        state.pendingManualTrigger = null
+        return
+    }
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i]
+        if (msg.info.role !== "user" || isIgnoredUserMessage(msg)) {
+            continue
+        }
+
+        for (const part of msg.parts) {
+            if (part.type !== "text" || part.ignored || part.synthetic) {
+                continue
+            }
+
+            part.text = pending.prompt
+            state.pendingManualTrigger = null
+            logger.debug("Applied manual prompt", { sessionId: pending.sessionId })
+            return
+        }
+    }
+
+    state.pendingManualTrigger = null
 }

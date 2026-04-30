@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto"
-import { isMessageCompacted } from "../shared-utils"
 import type { SessionState, WithParts } from "../state"
+import { isMessageCompacted } from "../state/utils"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 
 const SUMMARY_ID_HASH_LENGTH = 16
-const DCP_MESSAGE_ID_TAG_REGEX = /<dcp-message-id>(?:m\d+|b\d+)<\/dcp-message-id>/g
-const DCP_SYSTEM_REMINDER_REGEX = /<dcp-system-reminder\b[^>]*>[\s\S]*?<\/dcp-system-reminder>/g
+const DCP_BLOCK_ID_TAG_REGEX = /(<dcp-message-id(?=[\s>])[^>]*>)b\d+(<\/dcp-message-id>)/g
+const DCP_PAIRED_TAG_REGEX = /<dcp[^>]*>[\s\S]*?<\/dcp[^>]*>/gi
+const DCP_UNPAIRED_TAG_REGEX = /<\/?dcp[^>]*>/gi
 
 const generateStableId = (prefix: string, seed: string): string => {
     const hash = createHash("sha256").update(seed).digest("hex").slice(0, SUMMARY_ID_HASH_LENGTH)
@@ -15,7 +16,6 @@ const generateStableId = (prefix: string, seed: string): string => {
 export const createSyntheticUserMessage = (
     baseMessage: WithParts,
     content: string,
-    variant?: string,
     stableSeed?: string,
 ): WithParts => {
     const userInfo = baseMessage.info as UserMessage
@@ -32,7 +32,6 @@ export const createSyntheticUserMessage = (
             agent: userInfo.agent,
             model: userInfo.model,
             time: { created: now },
-            ...(variant !== undefined && { variant }),
         },
         parts: [
             {
@@ -66,11 +65,57 @@ export const createSyntheticTextPart = (
 
 type MessagePart = WithParts["parts"][number]
 type ToolPart = Extract<MessagePart, { type: "tool" }>
+type TextPart = Extract<MessagePart, { type: "text" }>
 
-export const appendIdToTool = (part: ToolPart, tag: string): boolean => {
-    if (part.type !== "tool") {
+export const appendToLastTextPart = (message: WithParts, injection: string): boolean => {
+    const textPart = findLastTextPart(message)
+    if (!textPart) {
         return false
     }
+
+    return appendToTextPart(textPart, injection)
+}
+
+const findLastTextPart = (message: WithParts): TextPart | null => {
+    for (let i = message.parts.length - 1; i >= 0; i--) {
+        const part = message.parts[i]
+        if (part.type === "text") {
+            return part
+        }
+    }
+
+    return null
+}
+
+export const appendToTextPart = (part: TextPart, injection: string): boolean => {
+    if (typeof part.text !== "string") {
+        return false
+    }
+
+    const normalizedInjection = injection.replace(/^\n+/, "")
+    if (!normalizedInjection.trim()) {
+        return false
+    }
+    if (part.text.includes(normalizedInjection)) {
+        return true
+    }
+
+    const baseText = part.text.replace(/\n*$/, "")
+    part.text = baseText.length > 0 ? `${baseText}\n\n${normalizedInjection}` : normalizedInjection
+    return true
+}
+
+export const appendToAllToolParts = (message: WithParts, tag: string): boolean => {
+    let injected = false
+    for (const part of message.parts) {
+        if (part.type === "tool") {
+            injected = appendToToolPart(part, tag) || injected
+        }
+    }
+    return injected
+}
+
+export const appendToToolPart = (part: ToolPart, tag: string): boolean => {
     if (part.state?.status !== "completed" || typeof part.state.output !== "string") {
         return false
     }
@@ -82,15 +127,16 @@ export const appendIdToTool = (part: ToolPart, tag: string): boolean => {
     return true
 }
 
-export const findLastToolPart = (message: WithParts): ToolPart | null => {
-    for (let i = message.parts.length - 1; i >= 0; i--) {
-        const part = message.parts[i]
-        if (part.type === "tool") {
-            return part
-        }
-    }
-
-    return null
+export const hasContent = (message: WithParts): boolean => {
+    return message.parts.some(
+        (part) =>
+            (part.type === "text" &&
+                typeof part.text === "string" &&
+                part.text.trim().length > 0) ||
+            (part.type === "tool" &&
+                part.state?.status === "completed" &&
+                typeof part.state.output === "string"),
+    )
 }
 
 export function buildToolIdList(state: SessionState, messages: WithParts[]): string[] {
@@ -112,23 +158,12 @@ export function buildToolIdList(state: SessionState, messages: WithParts[]): str
     return toolIds
 }
 
-export const isIgnoredUserMessage = (message: WithParts): boolean => {
-    const parts = Array.isArray(message.parts) ? message.parts : []
-    if (parts.length === 0) {
-        return true
-    }
-
-    for (const part of parts) {
-        if (!(part as any).ignored) {
-            return false
-        }
-    }
-
-    return true
+export const replaceBlockIdsWithBlocked = (text: string): string => {
+    return text.replace(DCP_BLOCK_ID_TAG_REGEX, "$1BLOCKED$2")
 }
 
 export const stripHallucinationsFromString = (text: string): string => {
-    return text.replace(DCP_SYSTEM_REMINDER_REGEX, "").replace(DCP_MESSAGE_ID_TAG_REGEX, "")
+    return text.replace(DCP_PAIRED_TAG_REGEX, "").replace(DCP_UNPAIRED_TAG_REGEX, "")
 }
 
 export const stripHallucinations = (messages: WithParts[]): void => {

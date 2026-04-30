@@ -1,5 +1,6 @@
 import type { SessionState, ToolParameterEntry, WithParts } from "./types"
 import type { Logger } from "../logger"
+import { applyPendingCompressionDurations } from "../compress/timing"
 import { loadSessionState, saveSessionState } from "./persistence"
 import {
     isSubAgentSession,
@@ -11,7 +12,7 @@ import {
     loadPruneMap,
     collectTurnNudgeAnchors,
 } from "./utils"
-import { getLastUserMessage } from "../shared-utils"
+import { getLastUserMessage } from "../messages/query"
 
 export const checkSession = async (
     client: any,
@@ -81,6 +82,10 @@ export function createSessionState(): SessionState {
             pruneTokenCounter: 0,
             totalPruneTokens: 0,
         },
+        compressionTiming: {
+            startsByCallId: new Map<string, number>(),
+            pendingByCallId: new Map(),
+        },
         toolParameters: new Map<string, ToolParameterEntry>(),
         subAgentResultCache: new Map<string, string>(),
         toolIdList: [],
@@ -91,11 +96,8 @@ export function createSessionState(): SessionState {
         },
         lastCompaction: 0,
         currentTurn: 0,
-        variant: undefined,
         modelContextLimit: undefined,
         systemPromptTokens: undefined,
-        autoLoopActive: false,
-        autoLoopState: null,
     }
 }
 
@@ -128,11 +130,8 @@ export function resetSessionState(state: SessionState): void {
     }
     state.lastCompaction = 0
     state.currentTurn = 0
-    state.variant = undefined
     state.modelContextLimit = undefined
     state.systemPromptTokens = undefined
-    state.autoLoopActive = false
-    state.autoLoopState = null
 }
 
 export async function ensureSessionInitialized(
@@ -180,5 +179,10 @@ export async function ensureSessionInitialized(
     state.stats = {
         pruneTokenCounter: persisted.stats?.pruneTokenCounter || 0,
         totalPruneTokens: persisted.stats?.totalPruneTokens || 0,
+    }
+
+    const applied = applyPendingCompressionDurations(state)
+    if (applied > 0) {
+        await saveSessionState(state, logger)
     }
 }

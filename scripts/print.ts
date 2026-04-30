@@ -13,8 +13,10 @@ function getPromptByKey(prompts: RuntimePrompts, key: PromptKey): string {
     switch (key) {
         case "system":
             return prompts.system
-        case "compress":
-            return prompts.compress
+        case "compress-range":
+            return prompts.compressRange
+        case "compress-message":
+            return prompts.compressMessage
         case "context-limit-nudge":
             return prompts.contextLimitNudge
         case "turn-nudge":
@@ -37,18 +39,18 @@ Usage:
 Options:
   --list                   List available prompt keys
   --show <key>             Print effective prompt text for key
-  --system                 Print effective system prompt with no overlays
-  --system-manual          Print system prompt with manual overlay
-  --system-subagent        Print system prompt with subagent overlay
-  --system-all             Print system prompt with both overlays
+  --system                 Print effective system prompt with no extensions
+  --system-manual          Print system prompt with manual extension
+  --system-subagent        Print system prompt with subagent extension
+  --system-all             Print system prompt with both extensions
 
 Prompt keys:
-  system, compress, context-limit-nudge,
-  turn-nudge, iteration-nudge
+  system, compress-range, compress-message,
+  context-limit-nudge, turn-nudge, iteration-nudge
 
 Examples:
   npm run dcp -- --list
-  npm run dcp -- --show compress
+  npm run dcp -- --show compress-range
   npm run dcp -- --system-all
 `)
     process.exit(0)
@@ -86,18 +88,18 @@ if (showIndex >= 0) {
 }
 
 if (args.includes("--system-all")) {
-    console.log(renderSystemPrompt(runtimePrompts, true, true))
+    console.log(renderSystemPrompt(runtimePrompts, undefined, true, true))
     process.exit(0)
 }
 
 if (args.includes("--system-manual")) {
-    console.log(renderSystemPrompt(runtimePrompts, true, false))
+    console.log(renderSystemPrompt(runtimePrompts, undefined, true))
     process.exit(0)
 }
 
 if (args.includes("--system-subagent")) {
-    console.log(renderSystemPrompt(runtimePrompts, false, true))
+    console.log(renderSystemPrompt(runtimePrompts, undefined, false, true))
     process.exit(0)
 }
 
-console.log(renderSystemPrompt(runtimePrompts, false, false))
+console.log(renderSystemPrompt(runtimePrompts))
